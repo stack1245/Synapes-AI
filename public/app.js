@@ -6,6 +6,11 @@
     currentConceptId: null,
     currentUser: null,
     authMode: "login",
+    isEmailVerified: false,
+    verificationTimer: null,
+    verificationRemaining: 0,
+    verificationStatus: "idle",
+    verifiedEmail: "",
     cy: null,
     isSending: false,
     toastTimer: null,
@@ -92,7 +97,28 @@
     ui.authTitle = document.getElementById("auth-title");
     ui.authSubtitle = document.getElementById("auth-subtitle");
     ui.authEmailInput = document.getElementById("auth-email-input");
+    ui.authSendVerificationButton = document.getElementById(
+      "auth-send-verification-button",
+    );
+    ui.authVerificationField = document.getElementById(
+      "auth-verification-field",
+    );
+    ui.authVerificationCodeInput = document.getElementById(
+      "auth-verification-code-input",
+    );
+    ui.authVerifyCodeButton = document.getElementById(
+      "auth-verify-code-button",
+    );
+    ui.authVerificationTimer = document.getElementById(
+      "auth-verification-timer",
+    );
     ui.authPasswordInput = document.getElementById("auth-password-input");
+    ui.authPasswordConfirmField = document.getElementById(
+      "auth-password-confirm-field",
+    );
+    ui.authPasswordConfirmInput = document.getElementById(
+      "auth-password-confirm-input",
+    );
     ui.authNicknameField = document.getElementById("auth-nickname-field");
     ui.authNicknameInput = document.getElementById("auth-nickname-input");
     ui.authSubmitButton = document.getElementById("auth-submit-button");
@@ -126,6 +152,18 @@
     });
     if (ui.authForm) {
       ui.authForm.addEventListener("submit", handleAuthSubmit);
+    }
+    if (ui.authSendVerificationButton) {
+      ui.authSendVerificationButton.addEventListener(
+        "click",
+        handleSendVerification,
+      );
+    }
+    if (ui.authVerifyCodeButton) {
+      ui.authVerifyCodeButton.addEventListener("click", handleVerifyCode);
+    }
+    if (ui.authEmailInput) {
+      ui.authEmailInput.addEventListener("input", handleAuthEmailInput);
     }
     if (ui.authModeToggleButton) {
       ui.authModeToggleButton.addEventListener("click", handleAuthModeToggle);
@@ -173,6 +211,14 @@
 
     ui.themeToggleIcon.className = "fa-solid fa-moon";
     ui.themeToggleLabel.textContent = "다크 모드";
+  }
+
+  function isValidEmail(value) {
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+  }
+
+  function isValidVerificationCode(value) {
+    return /^\d{6}$/.test(value);
   }
 
   async function initializeAuthSession() {
@@ -257,6 +303,131 @@
     }
   }
 
+  function stopVerificationTimer() {
+    if (state.verificationTimer) {
+      window.clearInterval(state.verificationTimer);
+      state.verificationTimer = null;
+    }
+  }
+
+  function formatVerificationTime(totalSeconds) {
+    const safeSeconds = Math.max(0, totalSeconds);
+    const minutes = String(Math.floor(safeSeconds / 60)).padStart(2, "0");
+    const seconds = String(safeSeconds % 60).padStart(2, "0");
+
+    return `${minutes}:${seconds}`;
+  }
+
+  function updateVerificationUi() {
+    const isSignup = state.authMode === "signup";
+    const isVerified = state.isEmailVerified;
+
+    if (ui.authVerificationField) {
+      ui.authVerificationField.classList.toggle("hidden", !isSignup);
+    }
+
+    if (ui.authPasswordConfirmField) {
+      ui.authPasswordConfirmField.classList.toggle("hidden", !isSignup);
+    }
+
+    if (ui.authPasswordConfirmInput) {
+      ui.authPasswordConfirmInput.required = isSignup;
+      ui.authPasswordConfirmInput.disabled = !isSignup;
+    }
+
+    if (ui.authSendVerificationButton) {
+      ui.authSendVerificationButton.classList.toggle("hidden", !isSignup);
+      ui.authSendVerificationButton.disabled = !isSignup || isVerified;
+      ui.authSendVerificationButton.textContent = isVerified
+        ? "인증 완료"
+        : state.verificationStatus === "countdown"
+          ? "재전송"
+          : "인증번호 받기";
+    }
+
+    if (ui.authEmailInput) {
+      ui.authEmailInput.disabled = isSignup && isVerified;
+    }
+
+    if (ui.authVerificationCodeInput) {
+      ui.authVerificationCodeInput.disabled = !isSignup || isVerified;
+    }
+
+    if (ui.authVerifyCodeButton) {
+      ui.authVerifyCodeButton.disabled = !isSignup || isVerified;
+      ui.authVerifyCodeButton.textContent = isVerified ? "확인 완료" : "확인";
+    }
+
+    if (ui.authVerificationTimer) {
+      ui.authVerificationTimer.classList.toggle(
+        "is-expired",
+        state.verificationStatus === "expired",
+      );
+      ui.authVerificationTimer.classList.toggle(
+        "is-verified",
+        state.verificationStatus === "verified",
+      );
+
+      if (!isSignup) {
+        ui.authVerificationTimer.textContent = "03:00";
+      } else if (state.verificationStatus === "verified") {
+        ui.authVerificationTimer.textContent = "인증 완료";
+      } else if (state.verificationStatus === "expired") {
+        ui.authVerificationTimer.textContent = "인증 시간이 초과되었습니다";
+      } else {
+        ui.authVerificationTimer.textContent = formatVerificationTime(
+          state.verificationRemaining || 180,
+        );
+      }
+    }
+  }
+
+  function resetEmailVerificationState(options = {}) {
+    const { clearCode = true, clearVerifiedEmail = true } = options;
+
+    stopVerificationTimer();
+    state.isEmailVerified = false;
+    state.verificationRemaining = 0;
+    state.verificationStatus = "idle";
+
+    if (clearVerifiedEmail) {
+      state.verifiedEmail = "";
+    }
+
+    if (clearCode && ui.authVerificationCodeInput) {
+      ui.authVerificationCodeInput.value = "";
+    }
+
+    if (ui.authEmailInput) {
+      ui.authEmailInput.disabled = false;
+    }
+
+    updateVerificationUi();
+  }
+
+  function startVerificationTimer(totalSeconds) {
+    stopVerificationTimer();
+    state.verificationRemaining = totalSeconds;
+    state.verificationStatus = "countdown";
+    updateVerificationUi();
+
+    state.verificationTimer = window.setInterval(() => {
+      state.verificationRemaining -= 1;
+
+      if (state.verificationRemaining <= 0) {
+        stopVerificationTimer();
+        state.verificationRemaining = 0;
+        state.verificationStatus = "expired";
+        state.isEmailVerified = false;
+        state.verifiedEmail = "";
+        updateVerificationUi();
+        return;
+      }
+
+      updateVerificationUi();
+    }, 1000);
+  }
+
   function setAppInteractionLocked(isLocked) {
     if (ui.appRoot) {
       ui.appRoot.classList.toggle("is-auth-locked", isLocked);
@@ -311,6 +482,7 @@
   }
 
   function setAuthMode(mode) {
+    const previousMode = state.authMode;
     const normalizedMode = mode === "signup" ? "signup" : "login";
     state.authMode = normalizedMode;
 
@@ -343,6 +515,16 @@
     if (ui.authNicknameInput) {
       ui.authNicknameInput.required = isSignup;
     }
+
+    if (previousMode !== normalizedMode) {
+      resetEmailVerificationState();
+
+      if (ui.authPasswordConfirmInput) {
+        ui.authPasswordConfirmInput.value = "";
+      }
+    }
+
+    updateVerificationUi();
 
     if (ui.authSubmitButton) {
       ui.authSubmitButton.textContent = isSignup
@@ -385,18 +567,156 @@
     });
   }
 
+  function handleAuthEmailInput() {
+    if (!ui.authEmailInput) {
+      return;
+    }
+
+    const normalizedEmail = ui.authEmailInput.value.trim().toLowerCase();
+
+    if (
+      state.isEmailVerified &&
+      normalizedEmail &&
+      normalizedEmail === state.verifiedEmail
+    ) {
+      return;
+    }
+
+    if (
+      state.verificationStatus !== "idle" ||
+      state.isEmailVerified ||
+      state.verifiedEmail
+    ) {
+      resetEmailVerificationState({
+        clearCode: true,
+        clearVerifiedEmail: true,
+      });
+    }
+  }
+
+  async function handleSendVerification() {
+    if (state.authMode !== "signup" || !ui.authEmailInput) {
+      return;
+    }
+
+    const email = ui.authEmailInput.value.trim().toLowerCase();
+
+    if (!isValidEmail(email)) {
+      showToast("유효한 이메일을 입력해 주세요.");
+      ui.authEmailInput.focus();
+      return;
+    }
+
+    ui.authSendVerificationButton.disabled = true;
+
+    try {
+      await requestJson("/api/auth/send-verification", {
+        method: "POST",
+        body: JSON.stringify({ email }),
+        skipAuthHandling: true,
+      });
+
+      state.isEmailVerified = false;
+      state.verifiedEmail = "";
+      state.verificationStatus = "countdown";
+
+      if (ui.authVerificationCodeInput) {
+        ui.authVerificationCodeInput.value = "";
+      }
+
+      startVerificationTimer(180);
+      showToast("인증번호를 전송했습니다. 이메일을 확인해 주세요.", "success");
+    } catch (error) {
+      console.error(error);
+      state.verificationStatus = "idle";
+      updateVerificationUi();
+      showToast(error.message || "인증번호 전송에 실패했습니다.");
+    } finally {
+      if (!state.isEmailVerified) {
+        ui.authSendVerificationButton.disabled = false;
+      }
+      updateVerificationUi();
+    }
+  }
+
+  async function handleVerifyCode() {
+    if (
+      state.authMode !== "signup" ||
+      !ui.authEmailInput ||
+      !ui.authVerificationCodeInput
+    ) {
+      return;
+    }
+
+    const email = ui.authEmailInput.value.trim().toLowerCase();
+    const code = ui.authVerificationCodeInput.value.trim();
+
+    if (!isValidEmail(email)) {
+      showToast("유효한 이메일을 입력해 주세요.");
+      ui.authEmailInput.focus();
+      return;
+    }
+
+    if (!isValidVerificationCode(code)) {
+      showToast("6자리 인증번호를 입력해 주세요.");
+      ui.authVerificationCodeInput.focus();
+      return;
+    }
+
+    ui.authVerifyCodeButton.disabled = true;
+
+    try {
+      await requestJson("/api/auth/verify-code", {
+        method: "POST",
+        body: JSON.stringify({ email, code }),
+        skipAuthHandling: true,
+      });
+
+      stopVerificationTimer();
+      state.isEmailVerified = true;
+      state.verifiedEmail = email;
+      state.verificationRemaining = 0;
+      state.verificationStatus = "verified";
+      updateVerificationUi();
+      showToast("이메일 인증이 완료되었습니다.", "success");
+    } catch (error) {
+      console.error(error);
+      ui.authVerifyCodeButton.disabled = false;
+      updateVerificationUi();
+      showToast(error.message || "인증번호 확인에 실패했습니다.");
+    }
+  }
+
   async function handleAuthSubmit(event) {
     event.preventDefault();
 
     const email = ui.authEmailInput.value.trim().toLowerCase();
     const password = ui.authPasswordInput.value;
+    const passwordConfirm = ui.authPasswordConfirmInput
+      ? ui.authPasswordConfirmInput.value
+      : "";
     const nickname = ui.authNicknameInput
       ? ui.authNicknameInput.value.trim()
       : "";
     const isSignup = state.authMode === "signup";
 
-    if (!email || !password || (isSignup && !nickname)) {
+    if (!email || !password || (isSignup && (!nickname || !passwordConfirm))) {
       showToast("이메일과 비밀번호를 입력해 주세요.");
+      return;
+    }
+
+    if (isSignup && !state.isEmailVerified) {
+      showToast("이메일 인증을 완료해 주세요");
+      return;
+    }
+
+    if (isSignup && state.verifiedEmail !== email) {
+      showToast("현재 이메일 기준으로 다시 인증해 주세요");
+      return;
+    }
+
+    if (isSignup && password !== passwordConfirm) {
+      showToast("비밀번호가 일치하지 않습니다");
       return;
     }
 
@@ -409,6 +729,7 @@
           body: JSON.stringify({
             email,
             password,
+            passwordConfirm,
             nickname,
           }),
           skipAuthHandling: true,
@@ -428,6 +749,7 @@
         ui.authForm.reset();
       }
 
+      resetEmailVerificationState();
       setAuthMode("login");
       await activateAuthenticatedSession(loginResult.data, {
         reloadData: true,

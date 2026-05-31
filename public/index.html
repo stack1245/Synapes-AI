@@ -137,15 +137,48 @@
 
               <label class="auth-field">
                 <span class="auth-label">이메일</span>
-                <input
-                  id="auth-email-input"
-                  class="auth-input"
-                  type="email"
-                  name="email"
-                  autocomplete="email"
-                  placeholder="you@example.com"
-                  required
-                />
+                <div class="auth-inline-row">
+                  <input
+                    id="auth-email-input"
+                    class="auth-input auth-inline-input"
+                    type="email"
+                    name="email"
+                    autocomplete="email"
+                    placeholder="you@example.com"
+                    required
+                  />
+                  <button
+                    id="auth-send-verification-button"
+                    class="auth-inline-button hidden"
+                    type="button"
+                  >
+                    인증번호 받기
+                  </button>
+                </div>
+              </label>
+
+              <div id="auth-verification-field" class="auth-field hidden">
+                <span class="auth-label">인증번호(6자리)</span>
+                <div class="auth-inline-row auth-verification-row">
+                  <input
+                    id="auth-verification-code-input"
+                    class="auth-input auth-inline-input"
+                    type="text"
+                    inputmode="numeric"
+                    maxlength="6"
+                    placeholder="6자리 인증번호를 입력해 주세요"
+                  />
+                  <button
+                    id="auth-verify-code-button"
+                    class="auth-inline-button"
+                    type="button"
+                  >
+                    확인
+                  </button>
+                </div>
+                <p id="auth-verification-timer" class="auth-verification-timer">
+                  03:00
+                </p>
               </label>
 
               <label class="auth-field">
@@ -158,6 +191,18 @@
                   autocomplete="current-password"
                   placeholder="비밀번호를 입력해 주세요"
                   required
+                />
+              </label>
+
+              <label id="auth-password-confirm-field" class="auth-field hidden">
+                <span class="auth-label">비밀번호 확인</span>
+                <input
+                  id="auth-password-confirm-input"
+                  class="auth-input"
+                  type="password"
+                  name="passwordConfirm"
+                  autocomplete="new-password"
+                  placeholder="비밀번호를 한 번 더 입력해 주세요"
                 />
               </label>
 

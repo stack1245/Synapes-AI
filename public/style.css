@@ -310,6 +310,17 @@ input,
   gap: 0.48rem;
 }
 
+.auth-inline-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.auth-inline-input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
 .auth-label {
   color: var(--text-secondary);
   font-size: 0.86rem;
@@ -339,6 +350,53 @@ input,
 .auth-input:focus {
   border-color: rgba(245, 155, 100, 0.5);
   box-shadow: 0 0 0 4px rgba(245, 155, 100, 0.14);
+}
+
+.auth-inline-button {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--panel-border);
+  border-radius: 1.2rem;
+  background: var(--panel-bg);
+  color: var(--text-primary);
+  min-height: 3.35rem;
+  padding: 0 1rem;
+  font-size: 0.88rem;
+  font-weight: 700;
+  white-space: nowrap;
+  box-shadow: var(--surface-shadow-soft);
+}
+
+.auth-inline-button:hover {
+  transform: translateY(-1px);
+}
+
+.auth-inline-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.58;
+  transform: none;
+}
+
+.auth-verification-row {
+  align-items: stretch;
+}
+
+.auth-verification-timer {
+  margin: 0.1rem 0 0;
+  color: var(--text-muted);
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+
+.auth-verification-timer.is-expired {
+  color: var(--signal);
+}
+
+.auth-verification-timer.is-verified {
+  color: var(--accent-strong);
 }
 
 .auth-submit-button {
@@ -893,6 +951,15 @@ input,
 }
 
 @media (max-width: 640px) {
+  .auth-inline-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .auth-inline-button {
+    width: 100%;
+  }
+
   .auth-overlay {
     padding: 0.9rem;
   }
