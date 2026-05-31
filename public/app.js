@@ -1499,8 +1499,8 @@
         senderRole === "user"
           ? "나"
           : senderRole === "assistant"
-            ? "AI 튜터"
-            : "시스템";
+            ? "시냅스"
+            : "시냅스";
 
       return `${roleLabel}: ${message.content || ""}`.trim();
     });
@@ -1742,8 +1742,8 @@
       senderRole === "user"
         ? "나"
         : senderRole === "assistant"
-          ? "AI 튜터"
-          : "시스템";
+          ? "시냅스"
+          : "시냅스";
     const conceptName = findConceptName(message.concept_node_id);
     const dateLabel = message.created_at
       ? formatTimeLabel(message.created_at)
