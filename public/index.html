@@ -216,17 +216,58 @@
             class="border-t border-white/10 bg-slate-950/70 px-4 py-4 md:px-6"
           >
             <form id="chat-form" class="space-y-3">
+              <input
+                id="image-input"
+                class="hidden"
+                type="file"
+                accept="image/*"
+              />
               <div
                 class="rounded-[28px] border border-white/10 bg-panel/80 p-3 shadow-panel"
               >
+                <div
+                  id="attachment-preview"
+                  class="mb-3 hidden items-center gap-3 rounded-[22px] border border-accent/20 bg-accent/10 px-3 py-3"
+                >
+                  <img
+                    id="attachment-thumbnail"
+                    class="h-14 w-14 rounded-2xl object-cover"
+                    alt="첨부 이미지 미리보기"
+                  />
+                  <div class="min-w-0 flex-1">
+                    <p
+                      id="attachment-filename"
+                      class="truncate text-sm font-medium text-white"
+                    ></p>
+                    <p class="mt-1 text-xs text-slate-300">이미지 첨부됨</p>
+                  </div>
+                  <button
+                    id="clear-image-button"
+                    class="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-slate-300 transition hover:border-white/20 hover:bg-white/10"
+                    type="button"
+                    aria-label="첨부 이미지 제거"
+                  >
+                    <i class="fa-solid fa-xmark"></i>
+                  </button>
+                </div>
                 <textarea
                   id="message-input"
                   class="chat-textarea chat-scroll h-24 w-full resize-none border-0 bg-transparent px-2 py-2 text-[15px] leading-7 text-white outline-none placeholder:text-slate-500"
                   placeholder="헷갈리는 문제, 막힌 풀이 과정, 개념 질문을 입력해 보세요."
                 ></textarea>
                 <div class="mt-3 flex items-center justify-between gap-3">
-                  <div class="text-xs text-slate-500">
-                    엔터로 줄바꿈, 전송 버튼으로 요청합니다.
+                  <div class="flex items-center gap-3">
+                    <button
+                      id="image-upload-button"
+                      class="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-3 py-2.5 text-sm text-slate-200 transition hover:border-white/20 hover:bg-white/10"
+                      type="button"
+                    >
+                      <i class="fa-solid fa-paperclip"></i>
+                      <span class="hidden sm:inline">사진 업로드</span>
+                    </button>
+                    <div class="text-xs text-slate-500">
+                      엔터로 줄바꿈, 문제 사진도 함께 보낼 수 있습니다.
+                    </div>
                   </div>
                   <button
                     id="send-button"

@@ -8,6 +8,8 @@
     isSending: false,
     toastTimer: null,
     uiOnlyMessagesByRoomId: {},
+    pendingImageBase64: "",
+    pendingImageName: "",
   };
 
   const ui = {};
@@ -36,6 +38,12 @@
     ui.chatForm = document.getElementById("chat-form");
     ui.messageInput = document.getElementById("message-input");
     ui.sendButton = document.getElementById("send-button");
+    ui.imageInput = document.getElementById("image-input");
+    ui.imageUploadButton = document.getElementById("image-upload-button");
+    ui.attachmentPreview = document.getElementById("attachment-preview");
+    ui.attachmentThumbnail = document.getElementById("attachment-thumbnail");
+    ui.attachmentFilename = document.getElementById("attachment-filename");
+    ui.clearImageButton = document.getElementById("clear-image-button");
     ui.modeSelect = document.getElementById("mode-select");
     ui.modeChipLabel = document.getElementById("mode-chip-label");
     ui.selectedRoomChip = document.getElementById("selected-room-chip");
@@ -62,6 +70,9 @@
     ui.chatForm.addEventListener("submit", handleSendMessage);
     ui.modeSelect.addEventListener("change", updateModeChip);
     ui.messageInput.addEventListener("input", autoResizeTextarea);
+    ui.imageUploadButton.addEventListener("click", () => ui.imageInput.click());
+    ui.imageInput.addEventListener("change", handleImageSelection);
+    ui.clearImageButton.addEventListener("click", clearPendingImage);
     ui.roomList.addEventListener("click", handleRoomListClick);
     ui.openSidebarButton.addEventListener("click", () => openDrawer("sidebar"));
     ui.closeSidebarButton.addEventListener("click", () =>
@@ -77,6 +88,83 @@
       showToast("설정 기능은 다음 단계에서 연결할 예정입니다.", "info");
     });
     window.addEventListener("resize", handleWindowResize);
+  }
+
+  async function handleImageSelection(event) {
+    const file = event.target.files && event.target.files[0];
+    if (!file) {
+      return;
+    }
+
+    if (!file.type.startsWith("image/")) {
+      clearPendingImage();
+      showToast("이미지 파일만 첨부할 수 있습니다.");
+      return;
+    }
+
+    try {
+      const imageBase64 = await readFileAsDataUrl(file);
+      state.pendingImageBase64 = imageBase64;
+      state.pendingImageName = file.name || "첨부 이미지";
+      ui.imageInput.value = "";
+      renderAttachmentPreview();
+      showToast("문제 이미지를 첨부했습니다.", "info");
+    } catch (error) {
+      console.error(error);
+      clearPendingImage();
+      showToast("이미지를 읽는 중 오류가 발생했습니다.");
+    }
+  }
+
+  function readFileAsDataUrl(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+
+      reader.onload = () => {
+        resolve(typeof reader.result === "string" ? reader.result : "");
+      };
+
+      reader.onerror = () => {
+        reject(new Error("파일을 읽을 수 없습니다."));
+      };
+
+      reader.readAsDataURL(file);
+    });
+  }
+
+  function renderAttachmentPreview() {
+    const hasImage = Boolean(state.pendingImageBase64);
+
+    ui.attachmentPreview.classList.toggle("hidden", !hasImage);
+    ui.attachmentPreview.classList.toggle("flex", hasImage);
+
+    if (!hasImage) {
+      ui.attachmentThumbnail.removeAttribute("src");
+      ui.attachmentFilename.textContent = "";
+      return;
+    }
+
+    ui.attachmentThumbnail.src = state.pendingImageBase64;
+    ui.attachmentFilename.textContent = state.pendingImageName || "첨부 이미지";
+  }
+
+  function clearPendingImage() {
+    state.pendingImageBase64 = "";
+    state.pendingImageName = "";
+    ui.imageInput.value = "";
+    renderAttachmentPreview();
+  }
+
+  function buildOutgoingPreviewText(message, hasImage) {
+    if (message && hasImage) {
+      return `${message}\n[문제 이미지 첨부]`;
+    }
+
+    if (message) {
+      return message;
+    }
+
+    return "문제 이미지가 첨부되었습니다.";
   }
 
   function getUiOnlyMessages(roomId) {
@@ -236,7 +324,10 @@
     event.preventDefault();
 
     const message = ui.messageInput.value.trim();
-    if (!message || state.isSending) {
+    const imageBase64 = state.pendingImageBase64;
+    const hasImage = Boolean(imageBase64);
+
+    if ((!message && !hasImage) || state.isSending) {
       return;
     }
 
@@ -253,7 +344,7 @@
         await setActiveRoom(roomId);
       }
 
-      appendPendingUserMessage(message);
+      appendPendingUserMessage(buildOutgoingPreviewText(message, hasImage));
       appendTypingIndicator();
 
       ui.messageInput.value = "";
@@ -266,6 +357,7 @@
           message,
           mode: ui.modeSelect.value,
           currentConceptId: state.currentConceptId,
+          imageBase64,
         }),
       });
 
@@ -273,10 +365,15 @@
         selectConcept(result.conceptId, { animate: true });
       }
 
+      clearPendingImage();
       await loadMessages(roomId);
       await refreshRoomsPreservingSelection();
     } catch (error) {
       console.error(error);
+      if (message && !ui.messageInput.value) {
+        ui.messageInput.value = message;
+        autoResizeTextarea();
+      }
       await loadMessages(state.currentRoomId);
       showToast(error.message || "메시지 전송 중 오류가 발생했습니다.");
     } finally {

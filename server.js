@@ -25,7 +25,7 @@ const tutorModePrompts = {
     "너는 완벽한 수학 튜터야. 풀이 과정을 단계별로 상세하고 친절하게 설명해 줘.",
 };
 
-app.use(express.json());
+app.use(express.json({ limit: "10mb" }));
 app.use(express.static(PUBLIC_DIR));
 
 function normalizeRoomTitle(title) {
@@ -44,6 +44,72 @@ function parseOptionalInteger(value) {
 
   const parsedValue = Number.parseInt(value, 10);
   return Number.isNaN(parsedValue) ? null : parsedValue;
+}
+
+function isImageDataUrl(value) {
+  return (
+    typeof value === "string" &&
+    /^data:image\/[a-zA-Z0-9.+-]+;base64,/.test(value.trim())
+  );
+}
+
+function buildStoredUserMessage(message, hasImageAttachment) {
+  if (message && hasImageAttachment) {
+    return `${message}\n[문제 이미지 첨부]`;
+  }
+
+  if (message) {
+    return message;
+  }
+
+  return "문제 이미지가 첨부되었습니다.";
+}
+
+function buildOpenAIUserContent(message, imageBase64) {
+  const promptText =
+    message || "첨부된 문제 이미지를 보고 수학 풀이 또는 힌트를 제공해 줘.";
+
+  if (!imageBase64) {
+    return promptText;
+  }
+
+  return [
+    {
+      type: "text",
+      text: promptText,
+    },
+    {
+      type: "image_url",
+      image_url: {
+        url: imageBase64,
+      },
+    },
+  ];
+}
+
+function applyLatestUserImageToMessages(messages, message, imageBase64) {
+  if (!imageBase64) {
+    return messages;
+  }
+
+  const nextMessages = [...messages];
+
+  for (let index = nextMessages.length - 1; index >= 0; index -= 1) {
+    if (nextMessages[index].role === "user") {
+      nextMessages[index] = {
+        role: "user",
+        content: buildOpenAIUserContent(message, imageBase64),
+      };
+      return nextMessages;
+    }
+  }
+
+  nextMessages.push({
+    role: "user",
+    content: buildOpenAIUserContent(message, imageBase64),
+  });
+
+  return nextMessages;
 }
 
 function getOpenAIClient() {
@@ -314,10 +380,13 @@ app.get("/api/chat/rooms/:roomId/messages", async (req, res) => {
 
 app.post("/api/chat/message", async (req, res) => {
   try {
-    const { roomId, message, mode, currentConceptId } = req.body;
+    const { roomId, message, mode, currentConceptId, imageBase64 } = req.body;
     const parsedRoomId = parseOptionalInteger(roomId);
     const parsedCurrentConceptId = parseOptionalInteger(currentConceptId);
     const trimmedMessage = typeof message === "string" ? message.trim() : "";
+    const normalizedImageBase64 =
+      typeof imageBase64 === "string" ? imageBase64.trim() : "";
+    const hasImageAttachment = Boolean(normalizedImageBase64);
 
     if (parsedRoomId === null) {
       return res.status(400).json({
@@ -326,10 +395,17 @@ app.post("/api/chat/message", async (req, res) => {
       });
     }
 
-    if (!trimmedMessage) {
+    if (!trimmedMessage && !hasImageAttachment) {
       return res.status(400).json({
         success: false,
-        message: "message는 비어 있을 수 없습니다.",
+        message: "message 또는 imageBase64 중 하나는 필요합니다.",
+      });
+    }
+
+    if (hasImageAttachment && !isImageDataUrl(normalizedImageBase64)) {
+      return res.status(400).json({
+        success: false,
+        message: "imageBase64는 유효한 이미지 데이터 URL이어야 합니다.",
       });
     }
 
@@ -352,7 +428,7 @@ app.post("/api/chat/message", async (req, res) => {
     await saveChatMessage(
       parsedRoomId,
       "user",
-      trimmedMessage,
+      buildStoredUserMessage(trimmedMessage, hasImageAttachment),
       parsedCurrentConceptId,
     );
 
@@ -362,11 +438,8 @@ app.post("/api/chat/message", async (req, res) => {
        ORDER BY id ASC`,
     );
     const conversationMessages = await getConversationMessages(parsedRoomId);
-    const openai = getOpenAIClient();
-    const completion = await openai.chat.completions.create({
-      model: OPENAI_MODEL,
-      temperature: mode === "hint" ? 0.7 : 0.2,
-      messages: [
+    const openAiMessages = applyLatestUserImageToMessages(
+      [
         {
           role: "system",
           content: buildSystemPrompt(mode),
@@ -377,6 +450,14 @@ app.post("/api/chat/message", async (req, res) => {
         },
         ...conversationMessages,
       ],
+      trimmedMessage,
+      normalizedImageBase64,
+    );
+    const openai = getOpenAIClient();
+    const completion = await openai.chat.completions.create({
+      model: OPENAI_MODEL,
+      temperature: mode === "hint" ? 0.7 : 0.2,
+      messages: openAiMessages,
     });
 
     const rawAssistantContent = completion.choices[0]?.message?.content || "";
