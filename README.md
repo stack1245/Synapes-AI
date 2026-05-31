@@ -10,6 +10,8 @@
 
 ## 주요 API
 
+- POST /api/auth/send-verification
+- POST /api/auth/verify-code
 - POST /api/auth/signup
 - POST /api/auth/login
 - POST /api/auth/logout
@@ -27,7 +29,7 @@
 ### 1. 패키지 설치
 
 ```bash
-npm install express sqlite sqlite3 openai dotenv bcryptjs jsonwebtoken cookie-parser
+npm install express sqlite sqlite3 openai dotenv bcryptjs jsonwebtoken cookie-parser nodemailer
 ```
 
 ### 2. 환경 변수 설정
@@ -37,11 +39,15 @@ npm install express sqlite sqlite3 openai dotenv bcryptjs jsonwebtoken cookie-pa
 ```env
 OPENAI_API_KEY=your_openai_api_key_here
 JWT_SECRET=replace_with_a_long_random_secret
+EMAIL_USER=your_gmail_address@gmail.com
+EMAIL_PASS=your_gmail_app_password
 OPENAI_MODEL=gpt-4o-mini
 PORT=3000
 ```
 
 로그인에 성공하면 서버가 JWT를 httpOnly 쿠키로 설정합니다. 이후 `/api/chat/rooms`, `/api/chat/rooms/:roomId/messages`, `/api/chat/message` 호출은 해당 쿠키를 기준으로 인증됩니다.
+
+이메일 인증번호 전송 API는 Gmail SMTP 기준 `EMAIL_USER`, `EMAIL_PASS`를 사용합니다. `/api/auth/send-verification`은 6자리 OTP를 발급해 정확히 3분 뒤 만료되도록 저장하고 메일로 전송하며, `/api/auth/verify-code`는 이메일과 인증번호를 검증한 뒤 성공 시 해당 OTP 레코드를 삭제합니다. 회원가입 API는 `passwordConfirm`이 `password`와 일치하는지도 서버에서 다시 검증합니다.
 
 ### 3. 서버 실행
 

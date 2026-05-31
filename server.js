@@ -5,6 +5,7 @@ const cookieParser = require("cookie-parser");
 const express = require("express");
 const fs = require("fs/promises");
 const jwt = require("jsonwebtoken");
+const nodemailer = require("nodemailer");
 const OpenAI = require("openai");
 const path = require("path");
 const sqlite3 = require("sqlite3");
@@ -21,8 +22,10 @@ const JWT_COOKIE_NAME = "synapes_auth_token";
 const JWT_EXPIRES_IN = "7d";
 const JWT_COOKIE_MAX_AGE = 1000 * 60 * 60 * 24 * 7;
 const BCRYPT_SALT_ROUNDS = 10;
+const EMAIL_VERIFICATION_EXPIRES_MINUTES = 3;
 
 let db;
+let emailTransporter;
 let openaiClient;
 
 const tutorModePrompts = {
@@ -69,8 +72,20 @@ function normalizeNickname(nickname) {
   return nickname.trim();
 }
 
+function normalizeVerificationCode(code) {
+  if (code === null || code === undefined) {
+    return "";
+  }
+
+  return String(code).trim();
+}
+
 function isValidEmail(email) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+}
+
+function isValidVerificationCode(code) {
+  return /^\d{6}$/.test(code);
 }
 
 function getJwtSecret() {
@@ -81,6 +96,28 @@ function getJwtSecret() {
   }
 
   return process.env.JWT_SECRET;
+}
+
+function getEmailCredentials() {
+  const emailUser =
+    typeof process.env.EMAIL_USER === "string"
+      ? process.env.EMAIL_USER.trim()
+      : "";
+  const emailPass =
+    typeof process.env.EMAIL_PASS === "string"
+      ? process.env.EMAIL_PASS.trim()
+      : "";
+
+  if (!emailUser || !emailPass) {
+    const error = new Error("EMAIL_USER와 EMAIL_PASS가 설정되지 않았습니다.");
+    error.statusCode = 500;
+    throw error;
+  }
+
+  return {
+    emailUser,
+    emailPass,
+  };
 }
 
 function getAuthCookieOptions() {
@@ -132,6 +169,42 @@ function clearAuthCookie(res) {
     secure: process.env.NODE_ENV === "production",
     path: "/",
   });
+}
+
+function getEmailTransporter() {
+  if (!emailTransporter) {
+    const { emailUser, emailPass } = getEmailCredentials();
+
+    emailTransporter = nodemailer.createTransport({
+      service: "gmail",
+      auth: {
+        user: emailUser,
+        pass: emailPass,
+      },
+    });
+  }
+
+  return emailTransporter;
+}
+
+function generateVerificationCode() {
+  return String(Math.floor(Math.random() * 1000000)).padStart(6, "0");
+}
+
+function buildVerificationExpiresAt() {
+  return new Date(
+    Date.now() + EMAIL_VERIFICATION_EXPIRES_MINUTES * 60 * 1000,
+  ).toISOString();
+}
+
+function isExpiredTimestamp(value) {
+  const timestamp = Date.parse(value);
+
+  if (Number.isNaN(timestamp)) {
+    return true;
+  }
+
+  return timestamp <= Date.now();
 }
 
 function isImageDataUrl(value) {
@@ -343,6 +416,51 @@ async function getUserByEmail(email) {
   );
 }
 
+async function saveEmailVerification(email, code, expiresAt) {
+  await db.run(
+    `DELETE FROM email_verifications
+     WHERE email = ? OR expires_at <= ?`,
+    [email, new Date().toISOString()],
+  );
+
+  return db.run(
+    `INSERT INTO email_verifications (email, code, expires_at)
+     VALUES (?, ?, ?)`,
+    [email, code, expiresAt],
+  );
+}
+
+async function getEmailVerificationByEmail(email) {
+  return db.get(
+    `SELECT id, email, code, expires_at
+     FROM email_verifications
+     WHERE email = ?
+     ORDER BY id DESC
+     LIMIT 1`,
+    [email],
+  );
+}
+
+async function deleteEmailVerificationById(id) {
+  return db.run(
+    `DELETE FROM email_verifications
+     WHERE id = ?`,
+    [id],
+  );
+}
+
+async function sendVerificationEmail(email, code) {
+  const transporter = getEmailTransporter();
+  const { emailUser } = getEmailCredentials();
+
+  return transporter.sendMail({
+    from: emailUser,
+    to: email,
+    subject: "시냅스 AI 인증번호",
+    text: `시냅스 AI 인증번호: ${code}`,
+  });
+}
+
 async function getRoomByIdForUser(roomId, userId) {
   return db.get(
     `SELECT id, user_id, title, created_at, updated_at
@@ -403,6 +521,17 @@ async function initializeDatabase() {
 
   const schemaSql = await fs.readFile(SCHEMA_PATH, "utf8");
   await db.exec(schemaSql);
+  await db.exec(`
+    CREATE TABLE IF NOT EXISTS email_verifications (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      email TEXT NOT NULL,
+      code TEXT NOT NULL,
+      expires_at TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_email_verifications_email
+      ON email_verifications(email);
+  `);
 }
 
 app.get("/api/concepts", async (req, res) => {
@@ -426,17 +555,122 @@ app.get("/api/concepts", async (req, res) => {
   }
 });
 
+app.post("/api/auth/send-verification", async (req, res) => {
+  try {
+    const email = normalizeEmail(req.body?.email);
+
+    if (!isValidEmail(email)) {
+      return res.status(400).json({
+        success: false,
+        message: "유효한 이메일이 필요합니다.",
+      });
+    }
+
+    const code = generateVerificationCode();
+    const expiresAt = buildVerificationExpiresAt();
+
+    await saveEmailVerification(email, code, expiresAt);
+
+    try {
+      await sendVerificationEmail(email, code);
+    } catch (mailError) {
+      await db.run(
+        `DELETE FROM email_verifications
+         WHERE email = ? AND code = ?`,
+        [email, code],
+      );
+      throw mailError;
+    }
+
+    return res.json({
+      success: true,
+      message: "인증번호를 이메일로 전송했습니다.",
+    });
+  } catch (error) {
+    console.error("Failed to send verification code:", error);
+
+    return res.status(error.statusCode || 500).json({
+      success: false,
+      message: "인증번호 전송 중 오류가 발생했습니다.",
+    });
+  }
+});
+
+app.post("/api/auth/verify-code", async (req, res) => {
+  try {
+    const email = normalizeEmail(req.body?.email);
+    const code = normalizeVerificationCode(req.body?.code);
+
+    if (!isValidEmail(email) || !isValidVerificationCode(code)) {
+      return res.status(400).json({
+        success: false,
+        message: "유효한 이메일과 6자리 인증번호가 필요합니다.",
+      });
+    }
+
+    const verification = await getEmailVerificationByEmail(email);
+
+    if (!verification) {
+      return res.status(400).json({
+        success: false,
+        message: "인증번호를 먼저 요청해 주세요.",
+      });
+    }
+
+    if (isExpiredTimestamp(verification.expires_at)) {
+      await deleteEmailVerificationById(verification.id);
+
+      return res.status(400).json({
+        success: false,
+        message: "인증번호가 만료되었습니다. 다시 요청해 주세요.",
+      });
+    }
+
+    if (verification.code !== code) {
+      return res.status(400).json({
+        success: false,
+        message: "인증번호가 올바르지 않습니다.",
+      });
+    }
+
+    await deleteEmailVerificationById(verification.id);
+
+    return res.json({
+      success: true,
+      message: "이메일 인증이 완료되었습니다.",
+    });
+  } catch (error) {
+    console.error("Failed to verify email code:", error);
+
+    return res.status(error.statusCode || 500).json({
+      success: false,
+      message: "인증번호 확인 중 오류가 발생했습니다.",
+    });
+  }
+});
+
 app.post("/api/auth/signup", async (req, res) => {
   try {
     const email = normalizeEmail(req.body?.email);
     const password =
       typeof req.body?.password === "string" ? req.body.password : "";
+    const passwordConfirm =
+      typeof req.body?.passwordConfirm === "string"
+        ? req.body.passwordConfirm
+        : "";
     const nickname = normalizeNickname(req.body?.nickname);
 
-    if (!isValidEmail(email) || !password || !nickname) {
+    if (!isValidEmail(email) || !password || !passwordConfirm || !nickname) {
       return res.status(400).json({
         success: false,
-        message: "유효한 이메일, 비밀번호, 닉네임이 필요합니다.",
+        message: "유효한 이메일, 비밀번호, 비밀번호 확인, 닉네임이 필요합니다.",
+      });
+    }
+
+    if (password !== passwordConfirm) {
+      return res.status(400).json({
+        success: false,
+        message: "비밀번호와 비밀번호 확인이 일치하지 않습니다.",
       });
     }
 
