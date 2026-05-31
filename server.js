@@ -407,6 +407,15 @@ async function getPublicUserById(userId) {
   return toPublicUser(user);
 }
 
+async function getUserById(userId) {
+  return db.get(
+    `SELECT id, email, password_hash, nickname, created_at, updated_at
+     FROM users
+     WHERE id = ?`,
+    [userId],
+  );
+}
+
 async function getUserByEmail(email) {
   return db.get(
     `SELECT id, email, password_hash, nickname, created_at, updated_at
@@ -764,6 +773,151 @@ app.get("/api/auth/me", authenticateToken, (req, res) => {
     success: true,
     data: req.user,
   });
+});
+
+app.put("/api/auth/me", authenticateToken, async (req, res) => {
+  try {
+    const nicknameProvided = typeof req.body?.nickname === "string";
+    const nickname = normalizeNickname(req.body?.nickname);
+    const currentPassword =
+      typeof req.body?.currentPassword === "string"
+        ? req.body.currentPassword
+        : "";
+    const newPassword =
+      typeof req.body?.newPassword === "string" ? req.body.newPassword : "";
+    const newPasswordConfirm =
+      typeof req.body?.newPasswordConfirm === "string"
+        ? req.body.newPasswordConfirm
+        : "";
+    const user = await getUserById(req.user.id);
+    const shouldUpdateNickname =
+      nicknameProvided && nickname !== user?.nickname;
+    const shouldUpdatePassword = Boolean(newPassword);
+
+    if (!user) {
+      clearAuthCookie(res);
+      return res.status(404).json({
+        success: false,
+        message: "존재하지 않는 사용자입니다.",
+      });
+    }
+
+    if (nicknameProvided && !nickname) {
+      return res.status(400).json({
+        success: false,
+        message: "닉네임은 비워 둘 수 없습니다.",
+      });
+    }
+
+    if (!newPassword && (currentPassword || newPasswordConfirm)) {
+      return res.status(400).json({
+        success: false,
+        message: "새 비밀번호를 함께 입력해 주세요.",
+      });
+    }
+
+    if (shouldUpdatePassword) {
+      if (!currentPassword) {
+        return res.status(400).json({
+          success: false,
+          message: "현재 비밀번호를 입력해 주세요.",
+        });
+      }
+
+      const isCurrentPasswordValid = await bcrypt.compare(
+        currentPassword,
+        user.password_hash,
+      );
+
+      if (!isCurrentPasswordValid) {
+        return res.status(400).json({
+          success: false,
+          message: "현재 비밀번호가 올바르지 않습니다.",
+        });
+      }
+
+      if (newPassword !== newPasswordConfirm) {
+        return res.status(400).json({
+          success: false,
+          message: "새 비밀번호와 비밀번호 확인이 일치하지 않습니다.",
+        });
+      }
+
+      const nextPasswordHash = await bcrypt.hash(
+        newPassword,
+        BCRYPT_SALT_ROUNDS,
+      );
+
+      await db.run(
+        `UPDATE users
+         SET password_hash = ?, updated_at = CURRENT_TIMESTAMP
+         WHERE id = ?`,
+        [nextPasswordHash, req.user.id],
+      );
+    }
+
+    if (shouldUpdateNickname) {
+      await db.run(
+        `UPDATE users
+         SET nickname = ?, updated_at = CURRENT_TIMESTAMP
+         WHERE id = ?`,
+        [nickname, req.user.id],
+      );
+    }
+
+    const updatedUser = await getPublicUserById(req.user.id);
+    setAuthCookie(res, updatedUser);
+
+    return res.json({
+      success: true,
+      data: updatedUser,
+    });
+  } catch (error) {
+    console.error("Failed to update current user:", error);
+
+    return res.status(error.statusCode || 500).json({
+      success: false,
+      message: "내 정보 수정 중 오류가 발생했습니다.",
+    });
+  }
+});
+
+app.delete("/api/auth/me", authenticateToken, async (req, res) => {
+  try {
+    await db.run(
+      `DELETE FROM email_verifications
+       WHERE email = ?`,
+      [req.user.email],
+    );
+
+    const result = await db.run(
+      `DELETE FROM users
+       WHERE id = ?`,
+      [req.user.id],
+    );
+
+    if (!result.changes) {
+      clearAuthCookie(res);
+      return res.status(404).json({
+        success: false,
+        message: "존재하지 않는 사용자입니다.",
+      });
+    }
+
+    clearAuthCookie(res);
+
+    return res.json({
+      success: true,
+      message: "회원 탈퇴가 완료되었습니다.",
+    });
+  } catch (error) {
+    console.error("Failed to delete current user:", error);
+
+    return res.status(error.statusCode || 500).json({
+      success: false,
+      message: "회원 탈퇴 중 오류가 발생했습니다.",
+    });
+  }
 });
 
 app.post("/api/chat/rooms", authenticateToken, async (req, res) => {

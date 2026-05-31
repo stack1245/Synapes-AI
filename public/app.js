@@ -88,6 +88,25 @@
     ui.settingsButton = document.getElementById("settings-button");
     ui.logoutButton = document.getElementById("logout-button");
     ui.currentUserLabel = document.getElementById("current-user-label");
+    ui.settingsOverlay = document.getElementById("settings-overlay");
+    ui.closeSettingsButton = document.getElementById("close-settings-button");
+    ui.settingsForm = document.getElementById("settings-form");
+    ui.settingsNicknameInput = document.getElementById(
+      "settings-nickname-input",
+    );
+    ui.settingsCurrentPasswordInput = document.getElementById(
+      "settings-current-password-input",
+    );
+    ui.settingsNewPasswordInput = document.getElementById(
+      "settings-new-password-input",
+    );
+    ui.settingsNewPasswordConfirmInput = document.getElementById(
+      "settings-new-password-confirm-input",
+    );
+    ui.settingsDeleteAccountButton = document.getElementById(
+      "settings-delete-account-button",
+    );
+    ui.settingsSaveButton = document.getElementById("settings-save-button");
     ui.themeToggleButton = document.getElementById("theme-toggle-button");
     ui.themeToggleIcon = document.getElementById("theme-toggle-icon");
     ui.themeToggleLabel = document.getElementById("theme-toggle-label");
@@ -147,11 +166,24 @@
       closeDrawer("concept"),
     );
     ui.conceptBackdrop.addEventListener("click", () => closeDrawer("concept"));
-    ui.settingsButton.addEventListener("click", () => {
-      showToast("설정 기능은 다음 단계에서 연결할 예정입니다.", "info");
-    });
+    ui.settingsButton.addEventListener("click", openSettingsModal);
     if (ui.authForm) {
       ui.authForm.addEventListener("submit", handleAuthSubmit);
+    }
+    if (ui.settingsForm) {
+      ui.settingsForm.addEventListener("submit", handleSettingsSubmit);
+    }
+    if (ui.closeSettingsButton) {
+      ui.closeSettingsButton.addEventListener("click", closeSettingsModal);
+    }
+    if (ui.settingsOverlay) {
+      ui.settingsOverlay.addEventListener("click", handleSettingsOverlayClick);
+    }
+    if (ui.settingsDeleteAccountButton) {
+      ui.settingsDeleteAccountButton.addEventListener(
+        "click",
+        handleDeleteAccount,
+      );
     }
     if (ui.authSendVerificationButton) {
       ui.authSendVerificationButton.addEventListener(
@@ -266,6 +298,7 @@
   function enterLoggedOutState() {
     state.currentUser = null;
     state.isSending = false;
+    closeSettingsModal();
     resetWorkspaceState();
     updateCurrentUserUi();
     setAuthMode("login");
@@ -481,6 +514,68 @@
     ui.authOverlay.hidden = true;
   }
 
+  function populateSettingsForm() {
+    if (!ui.settingsForm) {
+      return;
+    }
+
+    if (ui.settingsNicknameInput) {
+      ui.settingsNicknameInput.value = state.currentUser?.nickname || "";
+    }
+
+    if (ui.settingsCurrentPasswordInput) {
+      ui.settingsCurrentPasswordInput.value = "";
+    }
+
+    if (ui.settingsNewPasswordInput) {
+      ui.settingsNewPasswordInput.value = "";
+    }
+
+    if (ui.settingsNewPasswordConfirmInput) {
+      ui.settingsNewPasswordConfirmInput.value = "";
+    }
+  }
+
+  function openSettingsModal() {
+    if (!state.currentUser || !ui.settingsOverlay) {
+      return;
+    }
+
+    populateSettingsForm();
+    ui.settingsOverlay.hidden = false;
+    ui.settingsOverlay.classList.add("is-visible");
+
+    window.requestAnimationFrame(() => {
+      if (ui.settingsNicknameInput) {
+        ui.settingsNicknameInput.focus();
+      }
+    });
+  }
+
+  function closeSettingsModal() {
+    if (!ui.settingsOverlay) {
+      return;
+    }
+
+    ui.settingsOverlay.classList.remove("is-visible");
+    ui.settingsOverlay.hidden = true;
+    populateSettingsForm();
+
+    if (ui.settingsSaveButton) {
+      ui.settingsSaveButton.disabled = false;
+    }
+
+    if (ui.settingsDeleteAccountButton) {
+      ui.settingsDeleteAccountButton.disabled = false;
+    }
+  }
+
+  function handleSettingsOverlayClick(event) {
+    if (event.target === ui.settingsOverlay) {
+      closeSettingsModal();
+    }
+  }
+
   function setAuthMode(mode) {
     const previousMode = state.authMode;
     const normalizedMode = mode === "signup" ? "signup" : "login";
@@ -548,6 +643,14 @@
 
     if (ui.logoutButton) {
       ui.logoutButton.disabled = !state.currentUser;
+    }
+
+    if (
+      ui.settingsNicknameInput &&
+      state.currentUser &&
+      !ui.settingsOverlay?.hidden
+    ) {
+      ui.settingsNicknameInput.value = state.currentUser.nickname || "";
     }
   }
 
@@ -786,6 +889,95 @@
       console.error(error);
       ui.logoutButton.disabled = false;
       showToast(error.message || "로그아웃 중 오류가 발생했습니다.");
+    }
+  }
+
+  async function handleSettingsSubmit(event) {
+    event.preventDefault();
+
+    if (!state.currentUser || !ui.settingsNicknameInput) {
+      return;
+    }
+
+    const nickname = ui.settingsNicknameInput.value.trim();
+    const currentPassword = ui.settingsCurrentPasswordInput
+      ? ui.settingsCurrentPasswordInput.value
+      : "";
+    const newPassword = ui.settingsNewPasswordInput
+      ? ui.settingsNewPasswordInput.value
+      : "";
+    const newPasswordConfirm = ui.settingsNewPasswordConfirmInput
+      ? ui.settingsNewPasswordConfirmInput.value
+      : "";
+
+    if (!nickname) {
+      showToast("닉네임을 입력해 주세요.");
+      ui.settingsNicknameInput.focus();
+      return;
+    }
+
+    if (
+      (currentPassword || newPassword || newPasswordConfirm) &&
+      !newPassword
+    ) {
+      showToast("새 비밀번호를 입력해 주세요.");
+      return;
+    }
+
+    if (newPassword && newPassword !== newPasswordConfirm) {
+      showToast("새 비밀번호가 일치하지 않습니다.");
+      return;
+    }
+
+    ui.settingsSaveButton.disabled = true;
+
+    try {
+      const result = await requestJson("/api/auth/me", {
+        method: "PUT",
+        body: JSON.stringify({
+          nickname,
+          currentPassword,
+          newPassword,
+          newPasswordConfirm,
+        }),
+      });
+
+      state.currentUser = result.data || state.currentUser;
+      updateCurrentUserUi();
+      closeSettingsModal();
+      showToast("설정이 저장되었습니다", "success");
+    } catch (error) {
+      console.error(error);
+      ui.settingsSaveButton.disabled = false;
+      showToast(error.message || "설정 저장 중 오류가 발생했습니다.");
+    }
+  }
+
+  async function handleDeleteAccount() {
+    if (!state.currentUser || !ui.settingsDeleteAccountButton) {
+      return;
+    }
+
+    const shouldDelete = window.confirm(
+      "정말로 탈퇴하시겠습니까? 모든 학습 기록이 삭제됩니다.",
+    );
+
+    if (!shouldDelete) {
+      return;
+    }
+
+    ui.settingsDeleteAccountButton.disabled = true;
+
+    try {
+      await requestJson("/api/auth/me", {
+        method: "DELETE",
+        skipAuthHandling: true,
+      });
+      window.location.reload();
+    } catch (error) {
+      console.error(error);
+      ui.settingsDeleteAccountButton.disabled = false;
+      showToast(error.message || "회원 탈퇴 중 오류가 발생했습니다.");
     }
   }
 
