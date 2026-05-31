@@ -1114,6 +1114,28 @@ app.delete("/api/chat/rooms/:roomId", authenticateToken, async (req, res) => {
   }
 });
 
+app.delete("/api/chat/rooms", authenticateToken, async (req, res) => {
+  try {
+    await db.run(
+      `DELETE FROM chat_rooms
+       WHERE user_id = ?`,
+      [req.user.id],
+    );
+
+    return res.json({
+      success: true,
+      message: "모든 채팅 세션이 초기화되었습니다.",
+    });
+  } catch (error) {
+    console.error("Failed to delete all chat rooms:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "채팅 세션 초기화 중 오류가 발생했습니다.",
+    });
+  }
+});
+
 app.get("/api/chat/rooms", authenticateToken, async (req, res) => {
   try {
     const rooms = await db.all(

@@ -435,6 +435,98 @@ input,
   font-weight: 700;
 }
 
+.settings-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 82;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.2rem;
+  background: var(--auth-backdrop);
+  backdrop-filter: blur(24px);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 220ms ease;
+}
+
+.settings-overlay.is-visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.settings-modal {
+  width: min(100%, 560px);
+  border: 1px solid var(--panel-border);
+  border-radius: 2rem;
+  background: var(--panel-bg);
+  box-shadow: var(--surface-shadow);
+  padding: clamp(1.35rem, 3vw, 2rem);
+}
+
+.settings-modal-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.settings-close-button {
+  flex-shrink: 0;
+}
+
+.settings-title {
+  margin: 0.95rem 0 0;
+  color: var(--text-primary);
+  font-family: "Manrope", sans-serif;
+  font-size: 1.85rem;
+  font-weight: 800;
+  line-height: 1.2;
+}
+
+.settings-subtitle {
+  margin: 0.8rem 0 0;
+  color: var(--text-secondary);
+  font-size: 0.92rem;
+  line-height: 1.8;
+}
+
+.settings-form {
+  display: grid;
+  gap: 1rem;
+  margin-top: 1.5rem;
+}
+
+.settings-field {
+  display: grid;
+  gap: 0.48rem;
+}
+
+.settings-submit-button {
+  width: 100%;
+}
+
+.settings-danger-actions {
+  display: grid;
+  justify-items: start;
+  gap: 0.3rem;
+  padding-top: 0.35rem;
+}
+
+.settings-danger-button {
+  border: 0;
+  background: transparent;
+  color: var(--signal);
+  padding: 0.25rem 0;
+  font-size: 0.92rem;
+  font-weight: 700;
+  text-align: left;
+}
+
+.settings-danger-button:hover {
+  opacity: 0.82;
+}
+
 .sidebar-user-label {
   color: var(--text-secondary);
   font-size: 0.84rem;
@@ -1069,8 +1161,17 @@ input,
     padding: 0.9rem;
   }
 
+  .settings-overlay {
+    padding: 0.9rem;
+  }
+
   .auth-modal {
     border-radius: 1.7rem;
+  }
+
+  .settings-modal {
+    border-radius: 1.7rem;
+    padding: 1.4rem;
   }
 
   .auth-form-panel,
@@ -1080,5 +1181,9 @@ input,
 
   .auth-title {
     font-size: 1.65rem;
+  }
+
+  .settings-title {
+    font-size: 1.55rem;
   }
 }

@@ -226,6 +226,113 @@
         </div>
       </div>
 
+      <div
+        id="settings-overlay"
+        class="settings-overlay"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="settings-title"
+        hidden
+      >
+        <div class="settings-modal">
+          <div class="settings-modal-header">
+            <div>
+              <p class="panel-kicker">Settings</p>
+              <h2 id="settings-title" class="settings-title">내 설정</h2>
+              <p class="settings-subtitle">
+                닉네임과 비밀번호를 관리하고, 모든 대화 기록을 초기화하거나
+                계정을 탈퇴할 수 있습니다.
+              </p>
+            </div>
+
+            <button
+              id="settings-close-button"
+              class="toolbar-button settings-close-button"
+              type="button"
+              aria-label="설정 창 닫기"
+            >
+              <i class="fa-solid fa-xmark"></i>
+            </button>
+          </div>
+
+          <form id="settings-form" class="settings-form">
+            <label class="settings-field">
+              <span class="auth-label">닉네임</span>
+              <input
+                id="settings-nickname-input"
+                class="auth-input"
+                type="text"
+                name="nickname"
+                autocomplete="nickname"
+                placeholder="학습 기록에 표시할 이름"
+                required
+              />
+            </label>
+
+            <label class="settings-field">
+              <span class="auth-label">현재 비밀번호</span>
+              <input
+                id="settings-current-password-input"
+                class="auth-input"
+                type="password"
+                name="currentPassword"
+                autocomplete="current-password"
+                placeholder="비밀번호 변경 시에만 입력해 주세요"
+              />
+            </label>
+
+            <label class="settings-field">
+              <span class="auth-label">새 비밀번호</span>
+              <input
+                id="settings-new-password-input"
+                class="auth-input"
+                type="password"
+                name="newPassword"
+                autocomplete="new-password"
+                placeholder="새 비밀번호를 입력해 주세요"
+              />
+            </label>
+
+            <label class="settings-field">
+              <span class="auth-label">새 비밀번호 확인</span>
+              <input
+                id="settings-new-password-confirm-input"
+                class="auth-input"
+                type="password"
+                name="newPasswordConfirm"
+                autocomplete="new-password"
+                placeholder="새 비밀번호를 한 번 더 입력해 주세요"
+              />
+            </label>
+
+            <button
+              id="settings-submit-button"
+              class="auth-submit-button settings-submit-button"
+              type="submit"
+            >
+              저장하기
+            </button>
+
+            <div class="settings-danger-actions">
+              <button
+                id="settings-reset-chats-button"
+                class="settings-danger-button"
+                type="button"
+              >
+                모든 대화 초기화
+              </button>
+              <button
+                id="settings-delete-account-button"
+                class="settings-danger-button"
+                type="button"
+              >
+                계정 탈퇴하기
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+
       <div id="app-shell" class="app-shell">
         <div id="sidebar-backdrop" class="drawer-backdrop lg:hidden"></div>
         <div id="concept-backdrop" class="drawer-backdrop xl:hidden"></div>
