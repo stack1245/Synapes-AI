@@ -321,6 +321,8 @@ function buildSystemPrompt(mode) {
     '응답 형식은 {"reply":"학생에게 보여줄 답변","conceptId":추천할 개념 노드 ID} 이다.',
     "reply는 한국어 문자열로 작성해라.",
     "conceptId는 반드시 제공된 개념 노드 목록에 있는 정수 ID 하나만 반환해라.",
+    "★중요★ reply 내용에 줄바꿈이 필요할 경우 실제 줄바꿈(엔터)은 절대 사용하지 말고, 반드시 '\\n' 기호를 사용해서 이스케이프 처리해라.",
+    "마크다운(```json 등) 포맷팅이나 부가 설명은 절대 추가하지 말고 오직 순수한 JSON 객체만 반환해라.",
     "JSON 이외의 설명, 코드블록, 머리말은 절대 추가하지 마라.",
   ].join(" ");
 }
@@ -351,14 +353,29 @@ function parseAssistantJson(content) {
     throw new Error("AI 응답이 비어 있습니다.");
   }
 
+  const sanitizeJsonCandidate = (value) => {
+    const cleaned = value
+      .replace(/```json\s*/gi, "")
+      .replace(/```\s*/g, "")
+      .trim();
+
+    return cleaned.replace(/(?<=:\s*")(.*?)(?="(,|\s*\}))/gs, (match) =>
+      match.replace(/\n/g, "\\n").replace(/\r/g, "\\r").replace(/\t/g, "\\t"),
+    );
+  };
+
+  const sanitizedContent = sanitizeJsonCandidate(content);
+
   try {
-    return JSON.parse(content);
+    return JSON.parse(sanitizedContent);
   } catch (parseError) {
-    const jsonStart = content.indexOf("{");
-    const jsonEnd = content.lastIndexOf("}");
+    const jsonStart = sanitizedContent.indexOf("{");
+    const jsonEnd = sanitizedContent.lastIndexOf("}");
 
     if (jsonStart !== -1 && jsonEnd !== -1 && jsonEnd > jsonStart) {
-      return JSON.parse(content.slice(jsonStart, jsonEnd + 1));
+      return JSON.parse(
+        sanitizeJsonCandidate(sanitizedContent.slice(jsonStart, jsonEnd + 1)),
+      );
     }
 
     throw parseError;

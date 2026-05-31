@@ -51,7 +51,7 @@ EMAIL_PASS=your_gmail_app_password
 PORT=3000
 ```
 
-AI 응답 생성은 Google Gemini API를 사용하며, `GEMINI_MODEL`을 지정하지 않으면 기본값으로 gemini-2.5-flash를 사용합니다.
+AI 응답 생성은 Google Gemini API를 사용하며, `GEMINI_MODEL`을 지정하지 않으면 기본값으로 gemini-2.5-flash를 사용합니다. 서버는 Gemini 응답을 JSON으로 파싱하기 전에 마크다운 코드펜스와 비이스케이프 줄바꿈/탭 문자를 정제합니다.
 
 로그인에 성공하면 서버가 JWT를 httpOnly 쿠키로 설정합니다. 이후 `/api/chat/rooms`, `/api/chat/rooms/:roomId/messages`, `/api/chat/message` 호출은 해당 쿠키를 기준으로 인증됩니다.
 
