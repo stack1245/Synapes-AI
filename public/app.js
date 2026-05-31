@@ -1645,9 +1645,6 @@
                   </div>
                   <div class="room-meta-row mt-1">
                     <p class="room-meta text-xs">${escapeHtml(formatDateLabel(room.created_at))}</p>
-                    <span class="room-id-badge text-[10px] uppercase tracking-[0.18em]">
-                      #${room.id}
-                    </span>
                   </div>
                 </div>
               </button>
