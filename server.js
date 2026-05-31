@@ -8,7 +8,7 @@ const sqlite3 = require("sqlite3");
 const { open } = require("sqlite");
 
 const app = express();
-const PORT = 3000;
+const PORT = Number(process.env.PORT) || 3000;
 const DB_PATH = path.join(__dirname, "database.db");
 const PUBLIC_DIR = path.join(__dirname, "public");
 const SCHEMA_PATH = path.join(__dirname, "schema.sql");

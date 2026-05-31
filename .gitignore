@@ -1,0 +1,14 @@
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+.env
+
+database.db
+database.db-journal
+
+.DS_Store
+Thumbs.db
+Desktop.ini

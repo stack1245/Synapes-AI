@@ -28,10 +28,12 @@ npm install express sqlite sqlite3 openai dotenv
 
 ### 2. 환경 변수 설정
 
-프로젝트 루트에 .env 파일을 만들고 아래 값을 넣습니다.
+프로젝트 루트의 .env.example을 복사해 .env 파일을 만든 뒤 아래 값을 채웁니다.
 
 ```env
-OPENAI_API_KEY=your_openai_api_key
+OPENAI_API_KEY=your_openai_api_key_here
+OPENAI_MODEL=gpt-4o-mini
+PORT=3000
 ```
 
 ### 3. 서버 실행
