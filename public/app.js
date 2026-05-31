@@ -165,6 +165,7 @@
     ui.chatForm.addEventListener("submit", handleSendMessage);
     ui.modeSelect.addEventListener("change", updateModeChip);
     ui.messageInput.addEventListener("input", autoResizeTextarea);
+    ui.messageInput.addEventListener("keydown", handleMessageInputKeydown);
     ui.imageUploadButton.addEventListener("click", () => ui.imageInput.click());
     ui.imageInput.addEventListener("change", handleImageSelection);
     ui.clearImageButton.addEventListener("click", clearPendingImage);
@@ -231,6 +232,34 @@
     document.addEventListener("click", handleDocumentClick);
     window.addEventListener("beforeinstallprompt", handleBeforeInstallPrompt);
     window.addEventListener("resize", handleWindowResize);
+  }
+
+  function isMobileEnvironment() {
+    const coarsePointer =
+      typeof window.matchMedia === "function" &&
+      window.matchMedia("(pointer: coarse)").matches;
+    const userAgent = navigator.userAgent || "";
+    const mobileUserAgent =
+      /Android|iPhone|iPad|iPod|Mobile|Windows Phone|webOS/i.test(userAgent);
+
+    return coarsePointer || mobileUserAgent;
+  }
+
+  function handleMessageInputKeydown(event) {
+    if (event.key !== "Enter" || event.shiftKey) {
+      return;
+    }
+
+    if (isMobileEnvironment()) {
+      return;
+    }
+
+    if (event.isComposing || !ui.chatForm) {
+      return;
+    }
+
+    event.preventDefault();
+    ui.chatForm.requestSubmit();
   }
 
   function handleBeforeInstallPrompt(event) {
