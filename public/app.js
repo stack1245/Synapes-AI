@@ -1,11 +1,13 @@
 (function () {
   const state = {
     rooms: [],
+    roomMessagesByRoomId: {},
     concepts: [],
     currentRoomId: null,
     currentConceptId: null,
     currentUser: null,
     authMode: "login",
+    openRoomMenuId: null,
     isEmailVerified: false,
     verificationTimer: null,
     verificationRemaining: 0,
@@ -171,6 +173,7 @@
     if (ui.logoutButton) {
       ui.logoutButton.addEventListener("click", handleLogout);
     }
+    document.addEventListener("click", handleDocumentClick);
     window.addEventListener("resize", handleWindowResize);
   }
 
@@ -287,9 +290,11 @@
 
   function resetWorkspaceState() {
     state.rooms = [];
+    state.roomMessagesByRoomId = {};
     state.concepts = [];
     state.currentRoomId = null;
     state.currentConceptId = null;
+    state.openRoomMenuId = null;
     state.uiOnlyMessagesByRoomId = {};
     clearPendingImage();
     renderRoomList();
@@ -874,6 +879,42 @@
     return state.uiOnlyMessagesByRoomId[roomId] || [];
   }
 
+  function hasCachedRoomMessages(roomId) {
+    return Object.prototype.hasOwnProperty.call(
+      state.roomMessagesByRoomId,
+      roomId,
+    );
+  }
+
+  function getCachedRoomMessages(roomId) {
+    if (!roomId) {
+      return [];
+    }
+
+    return state.roomMessagesByRoomId[roomId] || [];
+  }
+
+  function setCachedRoomMessages(roomId, messages) {
+    if (!roomId) {
+      return;
+    }
+
+    state.roomMessagesByRoomId[roomId] = messages;
+  }
+
+  function removeRoomLocalState(roomId) {
+    if (!roomId) {
+      return;
+    }
+
+    delete state.uiOnlyMessagesByRoomId[roomId];
+    delete state.roomMessagesByRoomId[roomId];
+
+    if (state.openRoomMenuId === roomId) {
+      state.openRoomMenuId = null;
+    }
+  }
+
   function setUiOnlyMessages(roomId, messages) {
     if (!roomId) {
       return;
@@ -910,7 +951,9 @@
     }
 
     if (withOnboarding) {
-      setUiOnlyMessages(room.id, [createOnboardingMessage()]);
+      const onboardingMessages = [createOnboardingMessage()];
+      setUiOnlyMessages(room.id, onboardingMessages);
+      setCachedRoomMessages(room.id, onboardingMessages);
     }
 
     state.rooms = [room, ...state.rooms.filter((item) => item.id !== room.id)];
@@ -945,13 +988,30 @@
     }
   }
 
-  async function loadRooms() {
+  async function loadRooms(options = {}) {
+    const { createOnEmpty = true } = options;
+
     try {
       const result = await requestJson("/api/chat/rooms");
       state.rooms = Array.isArray(result.data) ? result.data : [];
+
+      if (
+        state.openRoomMenuId &&
+        !state.rooms.some((room) => room.id === state.openRoomMenuId)
+      ) {
+        state.openRoomMenuId = null;
+      }
+
       renderRoomList();
 
       if (state.rooms.length === 0) {
+        if (!createOnEmpty) {
+          state.currentRoomId = null;
+          updateSelectedRoomChip();
+          renderMessageList([]);
+          return;
+        }
+
         const onboardingRoom = await createRoom({ withOnboarding: true });
         await setActiveRoom(onboardingRoom.id);
         return;
@@ -979,28 +1039,47 @@
     await loadMessages(roomId);
   }
 
-  async function loadMessages(roomId) {
+  async function loadMessages(roomId, options = {}) {
+    const { render = true } = options;
+
     if (!roomId) {
-      renderMessageList([]);
-      return;
+      if (render) {
+        renderMessageList([]);
+      }
+      return [];
     }
 
     try {
-      renderLoadingMessages();
+      if (render) {
+        renderLoadingMessages();
+      }
+
       const result = await requestJson(`/api/chat/rooms/${roomId}/messages`);
       const persistedMessages = Array.isArray(result.data) ? result.data : [];
       const mergedMessages = [
         ...getUiOnlyMessages(roomId),
         ...persistedMessages,
       ];
-      renderMessageList(mergedMessages);
+      setCachedRoomMessages(roomId, mergedMessages);
+
+      if (render) {
+        renderMessageList(mergedMessages);
+      }
+
+      return mergedMessages;
     } catch (error) {
       console.error(error);
+
+      if (!render) {
+        throw error;
+      }
+
       renderMessageList(
         [],
         error.message || "메시지 내역을 불러오지 못했습니다.",
       );
       showToast(error.message || "메시지 내역을 불러오지 못했습니다.");
+      return [];
     }
   }
 
@@ -1097,6 +1176,14 @@
     try {
       const result = await requestJson("/api/chat/rooms");
       state.rooms = Array.isArray(result.data) ? result.data : [];
+
+      if (
+        state.openRoomMenuId &&
+        !state.rooms.some((room) => room.id === state.openRoomMenuId)
+      ) {
+        state.openRoomMenuId = null;
+      }
+
       renderRoomList();
       updateSelectedRoomChip();
     } catch (error) {
@@ -1104,8 +1191,37 @@
     }
   }
 
-  function handleRoomListClick(event) {
+  async function handleRoomListClick(event) {
     if (!state.currentUser) {
+      return;
+    }
+
+    const menuActionButton = event.target.closest("[data-room-menu-action]");
+
+    if (menuActionButton) {
+      const roomId = Number.parseInt(
+        menuActionButton.dataset.roomMenuRoomId,
+        10,
+      );
+      const action = menuActionButton.dataset.roomMenuAction;
+
+      if (!Number.isNaN(roomId) && action) {
+        await handleRoomMenuAction(action, roomId);
+      }
+      return;
+    }
+
+    const menuToggleButton = event.target.closest("[data-room-menu-toggle]");
+
+    if (menuToggleButton) {
+      const roomId = Number.parseInt(
+        menuToggleButton.dataset.roomMenuToggle,
+        10,
+      );
+
+      if (!Number.isNaN(roomId)) {
+        toggleRoomMenu(roomId);
+      }
       return;
     }
 
@@ -1116,13 +1232,184 @@
 
     const roomId = Number.parseInt(button.dataset.roomId, 10);
     if (!Number.isNaN(roomId) && roomId !== state.currentRoomId) {
-      setActiveRoom(roomId);
+      closeRoomMenu({ render: false });
+      await setActiveRoom(roomId);
+      return;
+    }
+
+    closeRoomMenu();
+  }
+
+  function handleDocumentClick(event) {
+    if (!state.openRoomMenuId) {
+      return;
+    }
+
+    if (
+      event.target.closest("[data-room-menu-toggle]") ||
+      event.target.closest("[data-room-menu]")
+    ) {
+      return;
+    }
+
+    closeRoomMenu();
+  }
+
+  function toggleRoomMenu(roomId) {
+    state.openRoomMenuId = state.openRoomMenuId === roomId ? null : roomId;
+    renderRoomList();
+  }
+
+  function closeRoomMenu(options = {}) {
+    const { render = true } = options;
+
+    if (state.openRoomMenuId === null) {
+      return;
+    }
+
+    state.openRoomMenuId = null;
+
+    if (render) {
+      renderRoomList();
+    }
+  }
+
+  function findRoomById(roomId) {
+    return state.rooms.find((room) => room.id === roomId) || null;
+  }
+
+  async function getShareableMessages(roomId) {
+    if (hasCachedRoomMessages(roomId)) {
+      return getCachedRoomMessages(roomId);
+    }
+
+    return loadMessages(roomId, { render: false });
+  }
+
+  function buildShareText(room, messages) {
+    const lines = messages.map((message) => {
+      const senderRole = message.sender_role || message.role || "assistant";
+      const roleLabel =
+        senderRole === "user"
+          ? "나"
+          : senderRole === "assistant"
+            ? "AI 튜터"
+            : "시스템";
+
+      return `${roleLabel}: ${message.content || ""}`.trim();
+    });
+
+    const title = room?.title || "새 오답 노트";
+    const header = `[${title}]`;
+
+    if (lines.length === 0) {
+      return `${header}\n\n아직 저장된 대화가 없습니다.`;
+    }
+
+    return `${header}\n\n${lines.join("\n\n")}`;
+  }
+
+  async function handleRoomMenuAction(action, roomId) {
+    const room = findRoomById(roomId);
+
+    if (!room) {
+      closeRoomMenu();
+      return;
+    }
+
+    closeRoomMenu();
+
+    try {
+      if (action === "share") {
+        const messages = await getShareableMessages(roomId);
+
+        if (!navigator.clipboard || !navigator.clipboard.writeText) {
+          throw new Error("클립보드 복사를 지원하지 않는 환경입니다.");
+        }
+
+        await navigator.clipboard.writeText(buildShareText(room, messages));
+        showToast("대화 내역이 복사되었습니다", "success");
+        await loadRooms({ createOnEmpty: false });
+        return;
+      }
+
+      if (action === "rename") {
+        const nextTitle = window.prompt(
+          "새 세션 이름을 입력해 주세요.",
+          room.title || "새 오답 노트",
+        );
+
+        if (nextTitle === null) {
+          return;
+        }
+
+        const normalizedTitle = nextTitle.trim();
+
+        if (!normalizedTitle) {
+          showToast("세션 이름은 비워 둘 수 없습니다.");
+          return;
+        }
+
+        await requestJson(`/api/chat/rooms/${roomId}`, {
+          method: "PATCH",
+          body: JSON.stringify({
+            title: normalizedTitle,
+          }),
+        });
+        showToast("세션 이름을 변경했습니다.", "success");
+        await loadRooms({ createOnEmpty: false });
+        return;
+      }
+
+      if (action === "pin") {
+        const result = await requestJson(`/api/chat/rooms/${roomId}/pin`, {
+          method: "PATCH",
+        });
+        const isPinned = Number(result.data?.is_pinned) === 1;
+
+        showToast(
+          isPinned ? "세션을 고정했습니다." : "세션 고정을 해제했습니다.",
+          "success",
+        );
+        await loadRooms({ createOnEmpty: false });
+        return;
+      }
+
+      if (action === "delete") {
+        const shouldDelete = window.confirm(
+          "정말로 이 세션을 삭제하시겠습니까?",
+        );
+
+        if (!shouldDelete) {
+          return;
+        }
+
+        await requestJson(`/api/chat/rooms/${roomId}`, {
+          method: "DELETE",
+        });
+
+        removeRoomLocalState(roomId);
+
+        if (state.currentRoomId === roomId) {
+          state.currentRoomId = null;
+        }
+
+        showToast("세션을 삭제했습니다.", "success");
+        await loadRooms({ createOnEmpty: false });
+      }
+    } catch (error) {
+      console.error(error);
+      showToast(error.message || "세션 관리 작업 중 오류가 발생했습니다.");
     }
   }
 
   function renderRoomList() {
     const rooms = state.rooms;
     ui.roomCount.textContent = String(rooms.length);
+
+    if (rooms.length === 0) {
+      state.openRoomMenuId = null;
+    }
 
     if (rooms.length === 0) {
       ui.roomList.innerHTML = `
@@ -1138,20 +1425,65 @@
     ui.roomList.innerHTML = rooms
       .map((room) => {
         const activeClass = room.id === state.currentRoomId ? "is-active" : "";
+        const isPinned = Number(room.is_pinned) === 1;
+        const isMenuOpen = state.openRoomMenuId === room.id;
 
         return `
-          <li>
-            <button class="room-button ${activeClass}" type="button" data-room-id="${room.id}">
-              <div class="flex items-start justify-between gap-3">
+          <li class="room-list-item">
+            <div class="room-item-shell">
+              <button class="room-button ${activeClass}" type="button" data-room-id="${room.id}">
                 <div class="min-w-0">
-                  <p class="room-title truncate font-medium">${escapeHtml(room.title || "새 오답 노트")}</p>
-                  <p class="room-meta mt-1 text-xs">${escapeHtml(formatDateLabel(room.created_at))}</p>
+                  <div class="room-title-row">
+                    <p class="room-title truncate font-medium">${escapeHtml(room.title || "새 오답 노트")}</p>
+                    ${isPinned ? '<span class="room-pin-indicator" aria-hidden="true"><i class="fa-solid fa-thumbtack"></i></span>' : ""}
+                  </div>
+                  <div class="room-meta-row mt-1">
+                    <p class="room-meta text-xs">${escapeHtml(formatDateLabel(room.created_at))}</p>
+                    <span class="room-id-badge text-[10px] uppercase tracking-[0.18em]">
+                      #${room.id}
+                    </span>
+                  </div>
                 </div>
-                <span class="room-id-badge mt-0.5 text-[10px] uppercase tracking-[0.18em]">
-                  #${room.id}
-                </span>
+              </button>
+
+              <div class="room-menu-anchor">
+                <button
+                  class="room-menu-toggle ${isMenuOpen ? "is-open" : ""}"
+                  type="button"
+                  aria-label="세션 메뉴 열기"
+                  aria-haspopup="menu"
+                  aria-expanded="${isMenuOpen ? "true" : "false"}"
+                  data-room-menu-toggle="${room.id}"
+                >
+                  <i class="fa-solid fa-ellipsis-vertical"></i>
+                </button>
+
+                ${
+                  isMenuOpen
+                    ? `
+                  <div class="room-menu-popover" data-room-menu="${room.id}" role="menu">
+                    <button class="room-menu-item" type="button" data-room-menu-action="share" data-room-menu-room-id="${room.id}">
+                      <i class="fa-solid fa-share-nodes"></i>
+                      <span>공유</span>
+                    </button>
+                    <button class="room-menu-item" type="button" data-room-menu-action="pin" data-room-menu-room-id="${room.id}">
+                      <i class="fa-solid fa-thumbtack"></i>
+                      <span>${isPinned ? "고정 해제" : "고정"}</span>
+                    </button>
+                    <button class="room-menu-item" type="button" data-room-menu-action="rename" data-room-menu-room-id="${room.id}">
+                      <i class="fa-solid fa-pen"></i>
+                      <span>이름 변경</span>
+                    </button>
+                    <button class="room-menu-item is-danger" type="button" data-room-menu-action="delete" data-room-menu-room-id="${room.id}">
+                      <i class="fa-solid fa-trash"></i>
+                      <span>삭제</span>
+                    </button>
+                  </div>
+                `
+                    : ""
+                }
               </div>
-            </button>
+            </div>
           </li>
         `;
       })

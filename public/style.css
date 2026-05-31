@@ -622,8 +622,16 @@ input,
   border-radius: 1.35rem;
   border: 1px solid transparent;
   background: transparent;
-  padding: 0.95rem 1rem;
+  padding: 0.95rem 3.9rem 0.95rem 1rem;
   text-align: left;
+}
+
+.room-list-item {
+  position: relative;
+}
+
+.room-item-shell {
+  position: relative;
 }
 
 .room-button:hover {
@@ -640,8 +648,31 @@ input,
   color: var(--text-primary);
 }
 
+.room-title-row {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.room-pin-indicator {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  color: var(--accent-strong);
+  font-size: 0.72rem;
+}
+
 .room-meta {
   color: var(--text-muted);
+}
+
+.room-meta-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.45rem;
 }
 
 .room-id-badge {
@@ -650,6 +681,74 @@ input,
   background: var(--panel-bg);
   color: var(--text-muted);
   padding: 0.28rem 0.56rem;
+}
+
+.room-menu-anchor {
+  position: absolute;
+  right: 0.72rem;
+  top: 0.72rem;
+  z-index: 5;
+}
+
+.room-menu-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid transparent;
+  border-radius: 1rem;
+  background: transparent;
+  color: var(--text-muted);
+  height: 2.1rem;
+  width: 2.1rem;
+}
+
+.room-menu-toggle:hover,
+.room-menu-toggle.is-open {
+  border-color: var(--panel-border);
+  background: var(--panel-bg);
+  color: var(--text-primary);
+  box-shadow: var(--surface-shadow-soft);
+}
+
+.room-menu-popover {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 0.5rem);
+  display: grid;
+  min-width: 11.5rem;
+  gap: 0.18rem;
+  border: 1px solid var(--panel-border);
+  border-radius: 1.2rem;
+  background: var(--panel-bg);
+  padding: 0.42rem;
+  box-shadow: var(--surface-shadow);
+}
+
+.room-menu-item {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 0.7rem;
+  border: 0;
+  border-radius: 0.95rem;
+  background: transparent;
+  color: var(--text-primary);
+  padding: 0.72rem 0.8rem;
+  text-align: left;
+  font-size: 0.88rem;
+  font-weight: 600;
+}
+
+.room-menu-item:hover {
+  background: var(--room-hover);
+}
+
+.room-menu-item.is-danger {
+  color: var(--signal);
+}
+
+.room-menu-item.is-danger:hover {
+  background: rgba(239, 111, 108, 0.1);
 }
 
 .chat-scroll::-webkit-scrollbar {
