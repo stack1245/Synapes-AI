@@ -10,20 +10,24 @@
 
 ## 주요 API
 
+- POST /api/auth/signup
+- POST /api/auth/login
+- POST /api/auth/logout
+- GET /api/auth/me
 - GET /api/concepts
 - POST /api/chat/rooms
 - GET /api/chat/rooms
 - GET /api/chat/rooms/:roomId/messages
 - POST /api/chat/message
 
-현재 채팅방 관련 API는 인증 시스템이 없으므로 임시로 user_id = 1 더미 사용자를 기준으로 동작합니다.
+채팅방 및 메시지 관련 API는 JWT 기반 httpOnly 쿠키 인증이 적용되며, 로그인한 사용자 기준으로만 조회 및 생성됩니다.
 
 ## 필수 가이드
 
 ### 1. 패키지 설치
 
 ```bash
-npm install express sqlite sqlite3 openai dotenv
+npm install express sqlite sqlite3 openai dotenv bcryptjs jsonwebtoken cookie-parser
 ```
 
 ### 2. 환경 변수 설정
@@ -32,9 +36,12 @@ npm install express sqlite sqlite3 openai dotenv
 
 ```env
 OPENAI_API_KEY=your_openai_api_key_here
+JWT_SECRET=replace_with_a_long_random_secret
 OPENAI_MODEL=gpt-4o-mini
 PORT=3000
 ```
+
+로그인에 성공하면 서버가 JWT를 httpOnly 쿠키로 설정합니다. 이후 `/api/chat/rooms`, `/api/chat/rooms/:roomId/messages`, `/api/chat/message` 호출은 해당 쿠키를 기준으로 인증됩니다.
 
 ### 3. 서버 실행
 

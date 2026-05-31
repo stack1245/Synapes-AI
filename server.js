@@ -1,7 +1,10 @@
 require("dotenv").config();
 
+const bcrypt = require("bcryptjs");
+const cookieParser = require("cookie-parser");
 const express = require("express");
 const fs = require("fs/promises");
+const jwt = require("jsonwebtoken");
 const OpenAI = require("openai");
 const path = require("path");
 const sqlite3 = require("sqlite3");
@@ -13,8 +16,11 @@ const DB_PATH = path.join(__dirname, "database.db");
 const PUBLIC_DIR = path.join(__dirname, "public");
 const SCHEMA_PATH = path.join(__dirname, "schema.sql");
 const OPENAI_MODEL = process.env.OPENAI_MODEL || "gpt-4o-mini";
-const DEMO_USER_ID = 1;
 const DEFAULT_ROOM_TITLE = "새 오답 노트";
+const JWT_COOKIE_NAME = "synapes_auth_token";
+const JWT_EXPIRES_IN = "7d";
+const JWT_COOKIE_MAX_AGE = 1000 * 60 * 60 * 24 * 7;
+const BCRYPT_SALT_ROUNDS = 10;
 
 let db;
 let openaiClient;
@@ -26,6 +32,7 @@ const tutorModePrompts = {
 };
 
 app.use(express.json({ limit: "10mb" }));
+app.use(cookieParser());
 app.use(express.static(PUBLIC_DIR));
 
 function normalizeRoomTitle(title) {
@@ -44,6 +51,87 @@ function parseOptionalInteger(value) {
 
   const parsedValue = Number.parseInt(value, 10);
   return Number.isNaN(parsedValue) ? null : parsedValue;
+}
+
+function normalizeEmail(email) {
+  if (typeof email !== "string") {
+    return "";
+  }
+
+  return email.trim().toLowerCase();
+}
+
+function normalizeNickname(nickname) {
+  if (typeof nickname !== "string") {
+    return "";
+  }
+
+  return nickname.trim();
+}
+
+function isValidEmail(email) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+}
+
+function getJwtSecret() {
+  if (!process.env.JWT_SECRET) {
+    const error = new Error("JWT_SECRET이 설정되지 않았습니다.");
+    error.statusCode = 500;
+    throw error;
+  }
+
+  return process.env.JWT_SECRET;
+}
+
+function getAuthCookieOptions() {
+  return {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
+    path: "/",
+    maxAge: JWT_COOKIE_MAX_AGE,
+  };
+}
+
+function toPublicUser(user) {
+  if (!user) {
+    return null;
+  }
+
+  return {
+    id: user.id,
+    email: user.email,
+    nickname: user.nickname,
+    created_at: user.created_at,
+    updated_at: user.updated_at,
+  };
+}
+
+function createAuthToken(user) {
+  return jwt.sign(
+    {
+      id: user.id,
+      email: user.email,
+      nickname: user.nickname,
+    },
+    getJwtSecret(),
+    {
+      expiresIn: JWT_EXPIRES_IN,
+    },
+  );
+}
+
+function setAuthCookie(res, user) {
+  res.cookie(JWT_COOKIE_NAME, createAuthToken(user), getAuthCookieOptions());
+}
+
+function clearAuthCookie(res) {
+  res.clearCookie(JWT_COOKIE_NAME, {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
+    path: "/",
+  });
 }
 
 function isImageDataUrl(value) {
@@ -235,21 +323,76 @@ async function getConversationMessages(roomId) {
   }));
 }
 
-async function ensureDemoUser() {
-  await db.run(
-    `INSERT OR IGNORE INTO users (id, email, password_hash, nickname)
-     VALUES (?, ?, ?, ?)`,
-    [DEMO_USER_ID, "demo@synapes.ai", "temporary_dummy_hash", "데모 사용자"],
+async function getPublicUserById(userId) {
+  const user = await db.get(
+    `SELECT id, email, nickname, created_at, updated_at
+     FROM users
+     WHERE id = ?`,
+    [userId],
+  );
+
+  return toPublicUser(user);
+}
+
+async function getUserByEmail(email) {
+  return db.get(
+    `SELECT id, email, password_hash, nickname, created_at, updated_at
+     FROM users
+     WHERE email = ?`,
+    [email],
   );
 }
 
-async function getRoomByIdForDemoUser(roomId) {
+async function getRoomByIdForUser(roomId, userId) {
   return db.get(
     `SELECT id, user_id, title, created_at, updated_at
      FROM chat_rooms
      WHERE id = ? AND user_id = ?`,
-    [roomId, DEMO_USER_ID],
+    [roomId, userId],
   );
+}
+
+async function authenticateToken(req, res, next) {
+  const token = req.cookies?.[JWT_COOKIE_NAME];
+
+  if (!token) {
+    return res.status(401).json({
+      success: false,
+      message: "로그인이 필요합니다.",
+    });
+  }
+
+  try {
+    const decoded = jwt.verify(token, getJwtSecret());
+    const userId = parseOptionalInteger(decoded?.id);
+
+    if (userId === null) {
+      clearAuthCookie(res);
+      return res.status(401).json({
+        success: false,
+        message: "유효하지 않은 인증 정보입니다.",
+      });
+    }
+
+    const user = await getPublicUserById(userId);
+
+    if (!user) {
+      clearAuthCookie(res);
+      return res.status(401).json({
+        success: false,
+        message: "존재하지 않는 사용자입니다.",
+      });
+    }
+
+    req.user = user;
+    return next();
+  } catch (error) {
+    clearAuthCookie(res);
+    return res.status(401).json({
+      success: false,
+      message: "인증이 만료되었거나 유효하지 않습니다.",
+    });
+  }
 }
 
 async function initializeDatabase() {
@@ -260,7 +403,6 @@ async function initializeDatabase() {
 
   const schemaSql = await fs.readFile(SCHEMA_PATH, "utf8");
   await db.exec(schemaSql);
-  await ensureDemoUser();
 }
 
 app.get("/api/concepts", async (req, res) => {
@@ -284,17 +426,121 @@ app.get("/api/concepts", async (req, res) => {
   }
 });
 
-app.post("/api/chat/rooms", async (req, res) => {
+app.post("/api/auth/signup", async (req, res) => {
   try {
-    await ensureDemoUser();
+    const email = normalizeEmail(req.body?.email);
+    const password =
+      typeof req.body?.password === "string" ? req.body.password : "";
+    const nickname = normalizeNickname(req.body?.nickname);
 
+    if (!isValidEmail(email) || !password || !nickname) {
+      return res.status(400).json({
+        success: false,
+        message: "유효한 이메일, 비밀번호, 닉네임이 필요합니다.",
+      });
+    }
+
+    const passwordHash = await bcrypt.hash(password, BCRYPT_SALT_ROUNDS);
+    const result = await db.run(
+      `INSERT INTO users (email, password_hash, nickname)
+       VALUES (?, ?, ?)`,
+      [email, passwordHash, nickname],
+    );
+    const user = await getPublicUserById(result.lastID);
+
+    return res.status(201).json({
+      success: true,
+      data: user,
+    });
+  } catch (error) {
+    console.error("Failed to sign up user:", error);
+
+    if (error.code === "SQLITE_CONSTRAINT") {
+      return res.status(409).json({
+        success: false,
+        message: "이미 사용 중인 이메일입니다.",
+      });
+    }
+
+    return res.status(500).json({
+      success: false,
+      message: "회원가입 중 오류가 발생했습니다.",
+    });
+  }
+});
+
+app.post("/api/auth/login", async (req, res) => {
+  try {
+    const email = normalizeEmail(req.body?.email);
+    const password =
+      typeof req.body?.password === "string" ? req.body.password : "";
+
+    if (!isValidEmail(email) || !password) {
+      return res.status(400).json({
+        success: false,
+        message: "유효한 이메일과 비밀번호가 필요합니다.",
+      });
+    }
+
+    const user = await getUserByEmail(email);
+
+    if (!user) {
+      return res.status(401).json({
+        success: false,
+        message: "이메일 또는 비밀번호가 올바르지 않습니다.",
+      });
+    }
+
+    const isPasswordValid = await bcrypt.compare(password, user.password_hash);
+
+    if (!isPasswordValid) {
+      return res.status(401).json({
+        success: false,
+        message: "이메일 또는 비밀번호가 올바르지 않습니다.",
+      });
+    }
+
+    setAuthCookie(res, user);
+
+    return res.json({
+      success: true,
+      data: toPublicUser(user),
+    });
+  } catch (error) {
+    console.error("Failed to log in user:", error);
+
+    return res.status(error.statusCode || 500).json({
+      success: false,
+      message: "로그인 중 오류가 발생했습니다.",
+    });
+  }
+});
+
+app.post("/api/auth/logout", (req, res) => {
+  clearAuthCookie(res);
+
+  return res.json({
+    success: true,
+    message: "로그아웃되었습니다.",
+  });
+});
+
+app.get("/api/auth/me", authenticateToken, (req, res) => {
+  return res.json({
+    success: true,
+    data: req.user,
+  });
+});
+
+app.post("/api/chat/rooms", authenticateToken, async (req, res) => {
+  try {
     const title = normalizeRoomTitle(req.body?.title);
     const result = await db.run(
       `INSERT INTO chat_rooms (user_id, title)
        VALUES (?, ?)`,
-      [DEMO_USER_ID, title],
+      [req.user.id, title],
     );
-    const room = await getRoomByIdForDemoUser(result.lastID);
+    const room = await getRoomByIdForUser(result.lastID, req.user.id);
 
     return res.status(201).json({
       success: true,
@@ -310,16 +556,14 @@ app.post("/api/chat/rooms", async (req, res) => {
   }
 });
 
-app.get("/api/chat/rooms", async (req, res) => {
+app.get("/api/chat/rooms", authenticateToken, async (req, res) => {
   try {
-    await ensureDemoUser();
-
     const rooms = await db.all(
       `SELECT id, user_id, title, created_at, updated_at
        FROM chat_rooms
        WHERE user_id = ?
        ORDER BY datetime(created_at) DESC, id DESC`,
-      [DEMO_USER_ID],
+      [req.user.id],
     );
 
     return res.json({
@@ -336,49 +580,53 @@ app.get("/api/chat/rooms", async (req, res) => {
   }
 });
 
-app.get("/api/chat/rooms/:roomId/messages", async (req, res) => {
-  try {
-    const parsedRoomId = parseOptionalInteger(req.params.roomId);
+app.get(
+  "/api/chat/rooms/:roomId/messages",
+  authenticateToken,
+  async (req, res) => {
+    try {
+      const parsedRoomId = parseOptionalInteger(req.params.roomId);
 
-    if (parsedRoomId === null) {
-      return res.status(400).json({
-        success: false,
-        message: "유효한 roomId가 필요합니다.",
-      });
-    }
+      if (parsedRoomId === null) {
+        return res.status(400).json({
+          success: false,
+          message: "유효한 roomId가 필요합니다.",
+        });
+      }
 
-    const room = await getRoomByIdForDemoUser(parsedRoomId);
+      const room = await getRoomByIdForUser(parsedRoomId, req.user.id);
 
-    if (!room) {
-      return res.status(404).json({
-        success: false,
-        message: "존재하지 않는 채팅방입니다.",
-      });
-    }
+      if (!room) {
+        return res.status(404).json({
+          success: false,
+          message: "존재하지 않는 채팅방입니다.",
+        });
+      }
 
-    const messages = await db.all(
-      `SELECT id, room_id, sender_role, content, concept_node_id, created_at
+      const messages = await db.all(
+        `SELECT id, room_id, sender_role, content, concept_node_id, created_at
        FROM chat_messages
        WHERE room_id = ?
        ORDER BY datetime(created_at) ASC, id ASC`,
-      [parsedRoomId],
-    );
+        [parsedRoomId],
+      );
 
-    return res.json({
-      success: true,
-      data: messages,
-    });
-  } catch (error) {
-    console.error("Failed to fetch chat room messages:", error);
+      return res.json({
+        success: true,
+        data: messages,
+      });
+    } catch (error) {
+      console.error("Failed to fetch chat room messages:", error);
 
-    return res.status(500).json({
-      success: false,
-      message: "채팅 메시지 조회 중 오류가 발생했습니다.",
-    });
-  }
-});
+      return res.status(500).json({
+        success: false,
+        message: "채팅 메시지 조회 중 오류가 발생했습니다.",
+      });
+    }
+  },
+);
 
-app.post("/api/chat/message", async (req, res) => {
+app.post("/api/chat/message", authenticateToken, async (req, res) => {
   try {
     const { roomId, message, mode, currentConceptId, imageBase64 } = req.body;
     const parsedRoomId = parseOptionalInteger(roomId);
@@ -416,7 +664,7 @@ app.post("/api/chat/message", async (req, res) => {
       });
     }
 
-    const room = await getRoomByIdForDemoUser(parsedRoomId);
+    const room = await getRoomByIdForUser(parsedRoomId, req.user.id);
 
     if (!room) {
       return res.status(404).json({
@@ -508,6 +756,7 @@ app.use((err, req, res, next) => {
 
 async function startServer() {
   try {
+    getJwtSecret();
     await initializeDatabase();
 
     app.listen(PORT, () => {
