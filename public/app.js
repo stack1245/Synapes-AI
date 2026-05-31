@@ -15,12 +15,15 @@
   const ui = {};
   const ONBOARDING_MESSAGE =
     "안녕하세요! 저는 시냅스 AI 튜터입니다. 헷갈리는 문제나 개념을 물어보세요.";
+  const THEME_STORAGE_KEY = "synapes-theme";
 
   document.addEventListener("DOMContentLoaded", initializeApp);
 
   async function initializeApp() {
     cacheElements();
+    initializeTheme();
     bindEvents();
+    renderAttachmentPreview();
     renderRoomList();
     renderMessageList([]);
     updateModeChip();
@@ -63,6 +66,9 @@
     ui.openConceptButton = document.getElementById("open-concept-button");
     ui.closeConceptButton = document.getElementById("close-concept-button");
     ui.settingsButton = document.getElementById("settings-button");
+    ui.themeToggleButton = document.getElementById("theme-toggle-button");
+    ui.themeToggleIcon = document.getElementById("theme-toggle-icon");
+    ui.themeToggleLabel = document.getElementById("theme-toggle-label");
   }
 
   function bindEvents() {
@@ -73,6 +79,7 @@
     ui.imageUploadButton.addEventListener("click", () => ui.imageInput.click());
     ui.imageInput.addEventListener("change", handleImageSelection);
     ui.clearImageButton.addEventListener("click", clearPendingImage);
+    ui.themeToggleButton.addEventListener("click", handleThemeToggle);
     ui.roomList.addEventListener("click", handleRoomListClick);
     ui.openSidebarButton.addEventListener("click", () => openDrawer("sidebar"));
     ui.closeSidebarButton.addEventListener("click", () =>
@@ -88,6 +95,45 @@
       showToast("설정 기능은 다음 단계에서 연결할 예정입니다.", "info");
     });
     window.addEventListener("resize", handleWindowResize);
+  }
+
+  function initializeTheme() {
+    applyTheme(getCurrentTheme(), { persist: false });
+  }
+
+  function getCurrentTheme() {
+    return document.documentElement.classList.contains("dark")
+      ? "dark"
+      : "light";
+  }
+
+  function handleThemeToggle() {
+    applyTheme(getCurrentTheme() === "dark" ? "light" : "dark");
+  }
+
+  function applyTheme(theme, options = {}) {
+    const { persist = true } = options;
+    const root = document.documentElement;
+
+    root.classList.toggle("dark", theme === "dark");
+
+    if (persist) {
+      localStorage.setItem(THEME_STORAGE_KEY, theme);
+    }
+
+    updateThemeToggleUi(theme);
+    updateCytoscapeTheme(theme);
+  }
+
+  function updateThemeToggleUi(theme) {
+    if (theme === "dark") {
+      ui.themeToggleIcon.className = "fa-solid fa-sun";
+      ui.themeToggleLabel.textContent = "라이트 모드";
+      return;
+    }
+
+    ui.themeToggleIcon.className = "fa-solid fa-moon";
+    ui.themeToggleLabel.textContent = "다크 모드";
   }
 
   async function handleImageSelection(event) {
@@ -413,8 +459,10 @@
 
     if (rooms.length === 0) {
       ui.roomList.innerHTML = `
-        <li class="rounded-[24px] border border-dashed border-white/10 bg-white/[0.02] p-4 text-sm leading-7 text-slate-400">
-          아직 세션이 없습니다. 새 오답 세션 버튼을 눌러 첫 대화를 시작하세요.
+        <li class="state-card p-6 text-left">
+          <p class="state-description">
+            아직 세션이 없습니다. 새 오답 세션 버튼을 누르면 학습 기록이 자동으로 시작됩니다.
+          </p>
         </li>
       `;
       return;
@@ -429,10 +477,10 @@
             <button class="room-button ${activeClass}" type="button" data-room-id="${room.id}">
               <div class="flex items-start justify-between gap-3">
                 <div class="min-w-0">
-                  <p class="truncate font-medium text-white">${escapeHtml(room.title || "새 오답 노트")}</p>
-                  <p class="mt-1 text-xs text-slate-400">${escapeHtml(formatDateLabel(room.created_at))}</p>
+                  <p class="room-title truncate font-medium">${escapeHtml(room.title || "새 오답 노트")}</p>
+                  <p class="room-meta mt-1 text-xs">${escapeHtml(formatDateLabel(room.created_at))}</p>
                 </div>
-                <span class="mt-0.5 rounded-full border border-white/10 bg-white/5 px-2 py-1 text-[10px] uppercase tracking-[0.18em] text-slate-400">
+                <span class="room-id-badge mt-0.5 text-[10px] uppercase tracking-[0.18em]">
                   #${room.id}
                 </span>
               </div>
@@ -445,9 +493,9 @@
 
   function renderLoadingMessages() {
     ui.messageList.innerHTML = `
-      <div class="mx-auto flex w-full max-w-3xl flex-col items-center justify-center gap-4 rounded-[32px] border border-white/10 bg-white/[0.03] px-6 py-12 text-center text-slate-400">
+      <div class="state-card">
         <div class="typing-dots"><span></span><span></span><span></span></div>
-        <p>대화 기록을 불러오는 중입니다.</p>
+        <p class="state-description">대화 기록을 불러오는 중입니다.</p>
       </div>
     `;
   }
@@ -455,9 +503,10 @@
   function renderMessageList(messages, errorMessage) {
     if (errorMessage) {
       ui.messageList.innerHTML = `
-        <div class="mx-auto flex w-full max-w-3xl flex-col items-center justify-center rounded-[32px] border border-signal/25 bg-signal/10 px-6 py-12 text-center text-slate-200">
-          <i class="fa-solid fa-triangle-exclamation text-2xl text-signal"></i>
-          <p class="mt-4 text-base font-medium">${escapeHtml(errorMessage)}</p>
+        <div class="state-card error">
+          <i class="fa-solid fa-triangle-exclamation text-2xl"></i>
+          <p class="state-title text-lg">불러오기에 실패했습니다</p>
+          <p class="state-description">${escapeHtml(errorMessage)}</p>
         </div>
       `;
       return;
@@ -465,12 +514,12 @@
 
     if (!messages || messages.length === 0) {
       ui.messageList.innerHTML = `
-        <div class="mx-auto flex w-full max-w-3xl flex-col items-center justify-center rounded-[32px] border border-white/10 bg-white/[0.03] px-6 py-12 text-center">
-          <span class="inline-flex h-14 w-14 items-center justify-center rounded-2xl bg-accent/10 text-accent">
+        <div class="state-card">
+          <span class="state-icon">
             <i class="fa-solid fa-brain text-xl"></i>
           </span>
-          <h3 class="mt-5 font-display text-2xl font-semibold text-white">대화를 시작할 준비가 됐습니다</h3>
-          <p class="mt-3 max-w-2xl text-sm leading-7 text-slate-400">
+          <h3 class="state-title">대화를 시작할 준비가 됐습니다</h3>
+          <p class="state-description">
             왼쪽에서 세션을 선택하거나 새로 만든 뒤, 중앙 입력창에 막힌 문제나 개념 질문을 적어 보세요.
           </p>
         </div>
@@ -501,12 +550,12 @@
     return `
       <article class="message-row ${senderRole}">
         <div class="message-card ${senderRole}">
-          <div class="mb-3 flex flex-wrap items-center gap-2 text-xs text-slate-400">
-            <span class="font-display font-semibold uppercase tracking-[0.18em] text-slate-300">${roleLabel}</span>
+          <div class="message-meta mb-3 flex flex-wrap items-center gap-2 text-xs">
+            <span class="message-role font-display font-semibold uppercase tracking-[0.18em]">${roleLabel}</span>
             <span>${escapeHtml(dateLabel)}</span>
-            ${conceptName ? `<span class="rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-[11px] text-slate-300">${escapeHtml(conceptName)}</span>` : ""}
+            ${conceptName ? `<span class="message-concept-chip">${escapeHtml(conceptName)}</span>` : ""}
           </div>
-          <div class="message-body text-[15px] text-slate-100">${escapeHtml(message.content || "")}</div>
+          <div class="message-body text-[15px]">${escapeHtml(message.content || "")}</div>
         </div>
       </article>
     `;
@@ -541,7 +590,7 @@
       `
         <article id="typing-indicator" class="message-row assistant">
           <div class="message-card assistant">
-            <div class="mb-3 text-xs font-display font-semibold uppercase tracking-[0.18em] text-slate-300">AI 튜터</div>
+            <div class="message-role mb-3 text-xs font-display font-semibold uppercase tracking-[0.18em]">AI 튜터</div>
             <div class="typing-dots"><span></span><span></span><span></span></div>
           </div>
         </article>
@@ -556,6 +605,105 @@
     if (indicator) {
       indicator.remove();
     }
+  }
+
+  function getThemePalette(theme = getCurrentTheme()) {
+    if (theme === "dark") {
+      return {
+        coreBackground: "#2b3038",
+        nodeBackground: "#2f3540",
+        nodeBorder: "rgba(203, 213, 225, 0.22)",
+        nodeText: "#f8fafc",
+        edge: "rgba(148, 163, 184, 0.42)",
+        selectedNode: "#f4a261",
+        selectedBorder: "#ffd3bd",
+        selectedText: "#fffaf6",
+        activeEdge: "rgba(244, 162, 97, 0.84)",
+      };
+    }
+
+    return {
+      coreBackground: "#f8f5ef",
+      nodeBackground: "#ffffff",
+      nodeBorder: "rgba(100, 116, 139, 0.26)",
+      nodeText: "#334155",
+      edge: "rgba(100, 116, 139, 0.38)",
+      selectedNode: "#f59b64",
+      selectedBorder: "#ea7a3a",
+      selectedText: "#fffaf5",
+      activeEdge: "rgba(245, 155, 100, 0.82)",
+    };
+  }
+
+  function buildCytoscapeStyles(palette) {
+    return [
+      {
+        selector: "core",
+        style: {
+          "outside-texture-bg-color": palette.coreBackground,
+          "outside-texture-bg-opacity": 1,
+          "selection-box-color": palette.selectedNode,
+          "selection-box-border-color": palette.selectedBorder,
+          "selection-box-opacity": 0.18,
+          "active-bg-color": palette.selectedNode,
+          "active-bg-opacity": 0.1,
+        },
+      },
+      {
+        selector: "node",
+        style: {
+          label: "data(label)",
+          width: 42,
+          height: 42,
+          "text-wrap": "wrap",
+          "text-max-width": 112,
+          "font-size": 11,
+          color: palette.nodeText,
+          "text-valign": "bottom",
+          "text-margin-y": 8,
+          "background-color": palette.nodeBackground,
+          "border-width": 1.5,
+          "border-color": palette.nodeBorder,
+        },
+      },
+      {
+        selector: "edge",
+        style: {
+          width: 2,
+          "line-color": palette.edge,
+          "target-arrow-shape": "triangle",
+          "target-arrow-color": palette.edge,
+          "curve-style": "bezier",
+        },
+      },
+      {
+        selector: "node.selected",
+        style: {
+          "background-color": palette.selectedNode,
+          "border-color": palette.selectedBorder,
+          color: palette.selectedText,
+        },
+      },
+      {
+        selector: "edge.active-path",
+        style: {
+          width: 3,
+          "line-color": palette.activeEdge,
+          "target-arrow-color": palette.activeEdge,
+        },
+      },
+    ];
+  }
+
+  function updateCytoscapeTheme(theme = getCurrentTheme()) {
+    if (!state.cy) {
+      return;
+    }
+
+    const palette = getThemePalette(theme);
+    ui.cyContainer.style.backgroundColor = palette.coreBackground;
+    state.cy.style().fromJson(buildCytoscapeStyles(palette)).update();
+    syncCySelection({ animate: false, focus: false });
   }
 
   function renderConceptTree() {
@@ -591,51 +739,7 @@
       state.cy = cytoscape({
         container: ui.cyContainer,
         elements,
-        style: [
-          {
-            selector: "node",
-            style: {
-              label: "data(label)",
-              width: 42,
-              height: 42,
-              "text-wrap": "wrap",
-              "text-max-width": 112,
-              "font-size": 11,
-              color: "#e2e8f0",
-              "text-valign": "bottom",
-              "text-margin-y": 8,
-              "background-color": "#162133",
-              "border-width": 1.5,
-              "border-color": "rgba(255,255,255,0.14)",
-            },
-          },
-          {
-            selector: "edge",
-            style: {
-              width: 2,
-              "line-color": "rgba(148,163,184,0.35)",
-              "target-arrow-shape": "triangle",
-              "target-arrow-color": "rgba(148,163,184,0.35)",
-              "curve-style": "bezier",
-            },
-          },
-          {
-            selector: "node.selected",
-            style: {
-              "background-color": "#2dd4bf",
-              "border-color": "#99f6e4",
-              color: "#ffffff",
-            },
-          },
-          {
-            selector: "edge.active-path",
-            style: {
-              width: 3,
-              "line-color": "rgba(45,212,191,0.72)",
-              "target-arrow-color": "rgba(45,212,191,0.72)",
-            },
-          },
-        ],
+        style: buildCytoscapeStyles(getThemePalette()),
         layout: {
           name: "breadthfirst",
           directed: true,
@@ -654,6 +758,7 @@
     } else {
       state.cy.elements().remove();
       state.cy.add(elements);
+      updateCytoscapeTheme();
       state.cy
         .layout({
           name: "breadthfirst",
@@ -697,7 +802,10 @@
     ui.conceptPanelTitle.textContent = targetNode.data("label");
     ui.conceptPanelDescription.textContent =
       "이 개념을 기준으로 AI 답변의 추천 개념 흐름을 유도합니다.";
-    focusConceptNode(targetNode, options.animate === true);
+
+    if (options.focus !== false) {
+      focusConceptNode(targetNode, options.animate === true);
+    }
   }
 
   function focusConceptNode(targetNode, shouldAnimate) {
