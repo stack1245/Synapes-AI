@@ -105,7 +105,8 @@ html.dark {
 html,
 body {
   margin: 0;
-  min-height: 100%;
+  height: 100%;
+  overflow: hidden;
 }
 
 body {
@@ -137,12 +138,17 @@ input,
 }
 
 .app-root {
-  min-height: 100vh;
+  height: 100dvh;
+  display: flex;
+  flex-direction: column;
   background: var(--page-bg);
 }
 
 .app-shell {
-  min-height: 100vh;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
   transition:
     filter 220ms ease,
     transform 220ms ease,
@@ -464,7 +470,7 @@ input,
 }
 
 .drawer {
-  min-height: calc(100vh - 1.5rem);
+  height: 100%;
 }
 
 .sidebar-drawer {
