@@ -4,9 +4,9 @@ const bcrypt = require("bcryptjs");
 const cookieParser = require("cookie-parser");
 const express = require("express");
 const fs = require("fs/promises");
+const { GoogleGenerativeAI } = require("@google/generative-ai");
 const jwt = require("jsonwebtoken");
 const nodemailer = require("nodemailer");
-const OpenAI = require("openai");
 const path = require("path");
 const sqlite3 = require("sqlite3");
 const { open } = require("sqlite");
@@ -16,7 +16,11 @@ const PORT = Number(process.env.PORT) || 3000;
 const DB_PATH = path.join(__dirname, "database.db");
 const PUBLIC_DIR = path.join(__dirname, "public");
 const SCHEMA_PATH = path.join(__dirname, "schema.sql");
-const OPENAI_MODEL = process.env.OPENAI_MODEL || "gpt-4o-mini";
+const GEMINI_MODEL =
+  typeof process.env.GEMINI_MODEL === "string" &&
+  process.env.GEMINI_MODEL.trim()
+    ? process.env.GEMINI_MODEL.trim()
+    : "gemini-2.5-flash";
 const DEFAULT_ROOM_TITLE = "새 오답 노트";
 const JWT_COOKIE_NAME = "synapes_auth_token";
 const JWT_EXPIRES_IN = "7d";
@@ -26,7 +30,6 @@ const EMAIL_VERIFICATION_EXPIRES_MINUTES = 3;
 
 let db;
 let emailTransporter;
-let openaiClient;
 
 const tutorModePrompts = {
   hint: "너는 친절한 수학 튜터야. 정답을 절대 먼저 말하지 말고, 공식이나 개념적 힌트만 주며 학생이 스스로 생각하도록 소크라테스식 질문을 던져라.",
@@ -226,40 +229,76 @@ function buildStoredUserMessage(message, hasImageAttachment) {
   return "문제 이미지가 첨부되었습니다.";
 }
 
-function buildOpenAIUserContent(message, imageBase64) {
-  const promptText =
-    message || "첨부된 문제 이미지를 보고 수학 풀이 또는 힌트를 제공해 줘.";
-
-  if (!imageBase64) {
-    return promptText;
-  }
-
-  return [
-    {
-      type: "text",
-      text: promptText,
-    },
-    {
-      type: "image_url",
-      image_url: {
-        url: imageBase64,
-      },
-    },
-  ];
+function buildGeminiPromptText(message) {
+  return (
+    message || "첨부된 문제 이미지를 보고 수학 풀이 또는 힌트를 제공해 줘."
+  );
 }
 
-function applyLatestUserImageToMessages(messages, message, imageBase64) {
+function buildGeminiInlineImagePart(imageBase64) {
   if (!imageBase64) {
-    return messages;
+    return null;
   }
 
-  const nextMessages = [...messages];
+  const matchedImageData = imageBase64
+    .trim()
+    .match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,([A-Za-z0-9+/=\s]+)$/);
+
+  if (!matchedImageData) {
+    const error = new Error(
+      "imageBase64는 유효한 이미지 데이터 URL이어야 합니다.",
+    );
+    error.statusCode = 400;
+    throw error;
+  }
+
+  return {
+    inlineData: {
+      mimeType: matchedImageData[1],
+      data: matchedImageData[2].replace(/\s+/g, ""),
+    },
+  };
+}
+
+function buildGeminiUserParts(message, imageBase64) {
+  const parts = [{ text: buildGeminiPromptText(message) }];
+  const imagePart = buildGeminiInlineImagePart(imageBase64);
+
+  if (imagePart) {
+    parts.push(imagePart);
+  }
+
+  return parts;
+}
+
+function mapConversationRoleToGemini(role) {
+  return role === "assistant" ? "model" : "user";
+}
+
+function buildGeminiMessages(conversationMessages, message, imageBase64) {
+  const geminiMessages = conversationMessages.map((conversationMessage) => ({
+    role: mapConversationRoleToGemini(conversationMessage.role),
+    parts: [
+      {
+        text:
+          typeof conversationMessage.content === "string"
+            ? conversationMessage.content
+            : "",
+      },
+    ],
+  }));
+
+  if (!imageBase64) {
+    return geminiMessages;
+  }
+
+  const nextMessages = [...geminiMessages];
 
   for (let index = nextMessages.length - 1; index >= 0; index -= 1) {
     if (nextMessages[index].role === "user") {
       nextMessages[index] = {
         role: "user",
-        content: buildOpenAIUserContent(message, imageBase64),
+        parts: buildGeminiUserParts(message, imageBase64),
       };
       return nextMessages;
     }
@@ -267,26 +306,10 @@ function applyLatestUserImageToMessages(messages, message, imageBase64) {
 
   nextMessages.push({
     role: "user",
-    content: buildOpenAIUserContent(message, imageBase64),
+    parts: buildGeminiUserParts(message, imageBase64),
   });
 
   return nextMessages;
-}
-
-function getOpenAIClient() {
-  if (!process.env.OPENAI_API_KEY) {
-    const error = new Error("OPENAI_API_KEY가 설정되지 않았습니다.");
-    error.statusCode = 500;
-    throw error;
-  }
-
-  if (!openaiClient) {
-    openaiClient = new OpenAI({
-      apiKey: process.env.OPENAI_API_KEY,
-    });
-  }
-
-  return openaiClient;
 }
 
 function buildSystemPrompt(mode) {
@@ -1221,29 +1244,35 @@ app.post("/api/chat/message", authenticateToken, async (req, res) => {
        ORDER BY id ASC`,
     );
     const conversationMessages = await getConversationMessages(parsedRoomId);
-    const openAiMessages = applyLatestUserImageToMessages(
-      [
-        {
-          role: "system",
-          content: buildSystemPrompt(mode),
-        },
-        {
-          role: "system",
-          content: buildConceptGuide(concepts, parsedCurrentConceptId),
-        },
-        ...conversationMessages,
-      ],
+    const geminiApiKey =
+      typeof process.env.GEMINI_API_KEY === "string"
+        ? process.env.GEMINI_API_KEY.trim()
+        : "";
+
+    if (!geminiApiKey) {
+      const error = new Error("GEMINI_API_KEY가 설정되지 않았습니다.");
+      error.statusCode = 500;
+      throw error;
+    }
+
+    const genAI = new GoogleGenerativeAI(geminiApiKey);
+    const modelInstance = genAI.getGenerativeModel({
+      model: GEMINI_MODEL,
+      systemInstruction: [
+        buildSystemPrompt(mode),
+        buildConceptGuide(concepts, parsedCurrentConceptId),
+      ].join("\n\n"),
+    });
+    const geminiMessages = buildGeminiMessages(
+      conversationMessages,
       trimmedMessage,
       normalizedImageBase64,
     );
-    const openai = getOpenAIClient();
-    const completion = await openai.chat.completions.create({
-      model: OPENAI_MODEL,
-      temperature: mode === "hint" ? 0.7 : 0.2,
-      messages: openAiMessages,
+    const response = await modelInstance.generateContent({
+      contents: geminiMessages,
     });
 
-    const rawAssistantContent = completion.choices[0]?.message?.content || "";
+    const rawAssistantContent = response.response.text();
     const parsedAssistantResponse = parseAssistantJson(rawAssistantContent);
     const reply =
       typeof parsedAssistantResponse.reply === "string"

@@ -34,7 +34,7 @@
 ### 1. 패키지 설치
 
 ```bash
-npm install express sqlite sqlite3 openai dotenv bcryptjs jsonwebtoken cookie-parser nodemailer
+npm install express sqlite sqlite3 @google/generative-ai dotenv bcryptjs jsonwebtoken cookie-parser nodemailer
 ```
 
 ### 2. 환경 변수 설정
@@ -42,13 +42,15 @@ npm install express sqlite sqlite3 openai dotenv bcryptjs jsonwebtoken cookie-pa
 프로젝트 루트의 .env.example을 복사해 .env 파일을 만든 뒤 아래 값을 채웁니다.
 
 ```env
-OPENAI_API_KEY=your_openai_api_key_here
+GEMINI_API_KEY=your_gemini_api_key_here
+GEMINI_MODEL=gemini-2.5-flash
 JWT_SECRET=replace_with_a_long_random_secret
 EMAIL_USER=your_gmail_address@gmail.com
 EMAIL_PASS=your_gmail_app_password
-OPENAI_MODEL=gpt-4o-mini
 PORT=3000
 ```
+
+AI 응답 생성은 Google Gemini API를 사용하며, `GEMINI_MODEL`을 지정하지 않으면 기본값으로 gemini-2.5-flash를 사용합니다.
 
 로그인에 성공하면 서버가 JWT를 httpOnly 쿠키로 설정합니다. 이후 `/api/chat/rooms`, `/api/chat/rooms/:roomId/messages`, `/api/chat/message` 호출은 해당 쿠키를 기준으로 인증됩니다.
 
