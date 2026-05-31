@@ -4,6 +4,8 @@
     concepts: [],
     currentRoomId: null,
     currentConceptId: null,
+    currentUser: null,
+    authMode: "login",
     cy: null,
     isSending: false,
     toastTimer: null,
@@ -23,17 +25,30 @@
     cacheElements();
     initializeTheme();
     bindEvents();
+    setAuthMode(state.authMode);
     renderAttachmentPreview();
     renderRoomList();
     renderMessageList([]);
     updateModeChip();
     updateSelectedRoomChip();
     updateSelectedConceptChip();
+    updateCurrentUserUi();
 
-    await Promise.all([loadConcepts(), loadRooms()]);
+    const isAuthenticated = await initializeAuthSession();
+
+    if (!isAuthenticated) {
+      return;
+    }
+
+    await activateAuthenticatedSession(state.currentUser, {
+      reloadData: true,
+      focusInput: false,
+    });
   }
 
   function cacheElements() {
+    ui.appRoot = document.querySelector(".app-root");
+    ui.appShell = document.getElementById("app-shell");
     ui.roomList = document.getElementById("room-list");
     ui.roomCount = document.getElementById("room-count");
     ui.newRoomButton = document.getElementById("new-room-button");
@@ -66,9 +81,24 @@
     ui.openConceptButton = document.getElementById("open-concept-button");
     ui.closeConceptButton = document.getElementById("close-concept-button");
     ui.settingsButton = document.getElementById("settings-button");
+    ui.logoutButton = document.getElementById("logout-button");
+    ui.currentUserLabel = document.getElementById("current-user-label");
     ui.themeToggleButton = document.getElementById("theme-toggle-button");
     ui.themeToggleIcon = document.getElementById("theme-toggle-icon");
     ui.themeToggleLabel = document.getElementById("theme-toggle-label");
+    ui.authOverlay = document.getElementById("auth-overlay");
+    ui.authForm = document.getElementById("auth-form");
+    ui.authModeBadge = document.getElementById("auth-mode-badge");
+    ui.authTitle = document.getElementById("auth-title");
+    ui.authSubtitle = document.getElementById("auth-subtitle");
+    ui.authEmailInput = document.getElementById("auth-email-input");
+    ui.authPasswordInput = document.getElementById("auth-password-input");
+    ui.authNicknameField = document.getElementById("auth-nickname-field");
+    ui.authNicknameInput = document.getElementById("auth-nickname-input");
+    ui.authSubmitButton = document.getElementById("auth-submit-button");
+    ui.authModeToggleButton = document.getElementById(
+      "auth-mode-toggle-button",
+    );
   }
 
   function bindEvents() {
@@ -94,6 +124,15 @@
     ui.settingsButton.addEventListener("click", () => {
       showToast("설정 기능은 다음 단계에서 연결할 예정입니다.", "info");
     });
+    if (ui.authForm) {
+      ui.authForm.addEventListener("submit", handleAuthSubmit);
+    }
+    if (ui.authModeToggleButton) {
+      ui.authModeToggleButton.addEventListener("click", handleAuthModeToggle);
+    }
+    if (ui.logoutButton) {
+      ui.logoutButton.addEventListener("click", handleLogout);
+    }
     window.addEventListener("resize", handleWindowResize);
   }
 
@@ -134,6 +173,298 @@
 
     ui.themeToggleIcon.className = "fa-solid fa-moon";
     ui.themeToggleLabel.textContent = "다크 모드";
+  }
+
+  async function initializeAuthSession() {
+    setAppInteractionLocked(true);
+    showAuthOverlay();
+
+    try {
+      const result = await requestJson("/api/auth/me", {
+        skipAuthHandling: true,
+      });
+
+      state.currentUser = result.data || null;
+      updateCurrentUserUi();
+      return Boolean(state.currentUser);
+    } catch (error) {
+      console.error(error);
+
+      if (error.status && error.status !== 401) {
+        showToast(error.message || "로그인 상태를 확인하지 못했습니다.");
+      }
+
+      enterLoggedOutState();
+      return false;
+    }
+  }
+
+  async function activateAuthenticatedSession(user, options = {}) {
+    const { reloadData = true, focusInput = true } = options;
+
+    state.currentUser = user;
+    resetWorkspaceState();
+    updateCurrentUserUi();
+    hideAuthOverlay();
+    setAppInteractionLocked(false);
+
+    if (reloadData) {
+      await Promise.all([loadConcepts(), loadRooms()]);
+    }
+
+    if (focusInput) {
+      ui.messageInput.focus();
+    }
+  }
+
+  function enterLoggedOutState() {
+    state.currentUser = null;
+    state.isSending = false;
+    resetWorkspaceState();
+    updateCurrentUserUi();
+    setAuthMode("login");
+    setAppInteractionLocked(true);
+    showAuthOverlay();
+    closeDrawer("sidebar");
+    closeDrawer("concept");
+
+    if (ui.sendButton) {
+      ui.sendButton.disabled = false;
+    }
+
+    window.requestAnimationFrame(() => {
+      if (ui.authEmailInput) {
+        ui.authEmailInput.focus();
+      }
+    });
+  }
+
+  function resetWorkspaceState() {
+    state.rooms = [];
+    state.concepts = [];
+    state.currentRoomId = null;
+    state.currentConceptId = null;
+    state.uiOnlyMessagesByRoomId = {};
+    clearPendingImage();
+    renderRoomList();
+    renderMessageList([]);
+    updateSelectedRoomChip();
+    updateSelectedConceptChip();
+
+    if (state.cy) {
+      state.cy.elements().remove();
+      state.cy.resize();
+    }
+  }
+
+  function setAppInteractionLocked(isLocked) {
+    if (ui.appRoot) {
+      ui.appRoot.classList.toggle("is-auth-locked", isLocked);
+    }
+
+    if (ui.appShell) {
+      ui.appShell.setAttribute("aria-hidden", isLocked ? "true" : "false");
+    }
+
+    const interactiveTargets = [
+      ui.newRoomButton,
+      ui.messageInput,
+      ui.sendButton,
+      ui.imageUploadButton,
+      ui.modeSelect,
+      ui.settingsButton,
+      ui.openSidebarButton,
+      ui.openConceptButton,
+      ui.logoutButton,
+    ];
+
+    interactiveTargets.forEach((element) => {
+      if (!element) {
+        return;
+      }
+
+      if (element === ui.logoutButton) {
+        element.disabled = isLocked || !state.currentUser;
+        return;
+      }
+
+      element.disabled = isLocked;
+    });
+  }
+
+  function showAuthOverlay() {
+    if (!ui.authOverlay) {
+      return;
+    }
+
+    ui.authOverlay.hidden = false;
+    ui.authOverlay.classList.add("is-visible");
+  }
+
+  function hideAuthOverlay() {
+    if (!ui.authOverlay) {
+      return;
+    }
+
+    ui.authOverlay.classList.remove("is-visible");
+    ui.authOverlay.hidden = true;
+  }
+
+  function setAuthMode(mode) {
+    const normalizedMode = mode === "signup" ? "signup" : "login";
+    state.authMode = normalizedMode;
+
+    if (!ui.authForm) {
+      return;
+    }
+
+    const isSignup = normalizedMode === "signup";
+
+    if (ui.authModeBadge) {
+      ui.authModeBadge.textContent = isSignup ? "Sign Up" : "Login";
+    }
+
+    if (ui.authTitle) {
+      ui.authTitle.textContent = isSignup
+        ? "처음 시작하는 학습 계정을 만들어 보세요"
+        : "이전 학습 세션으로 바로 이어가세요";
+    }
+
+    if (ui.authSubtitle) {
+      ui.authSubtitle.textContent = isSignup
+        ? "이메일과 닉네임을 등록하면 내 오답 세션과 개념 흐름이 개인 계정에 저장됩니다."
+        : "로그인하면 저장된 세션과 개념 추천 흐름을 계속 이어서 볼 수 있습니다.";
+    }
+
+    if (ui.authNicknameField) {
+      ui.authNicknameField.classList.toggle("hidden", !isSignup);
+    }
+
+    if (ui.authNicknameInput) {
+      ui.authNicknameInput.required = isSignup;
+    }
+
+    if (ui.authSubmitButton) {
+      ui.authSubmitButton.textContent = isSignup
+        ? "회원가입 후 시작하기"
+        : "로그인하고 계속하기";
+    }
+
+    if (ui.authModeToggleButton) {
+      ui.authModeToggleButton.textContent = isSignup
+        ? "이미 계정이 있으신가요? 로그인"
+        : "계정이 없으신가요? 회원가입";
+    }
+  }
+
+  function updateCurrentUserUi() {
+    if (ui.currentUserLabel) {
+      ui.currentUserLabel.textContent = state.currentUser
+        ? `${state.currentUser.nickname} 님으로 로그인됨`
+        : "로그인 후 내 학습 세션을 저장하세요";
+    }
+
+    if (ui.logoutButton) {
+      ui.logoutButton.disabled = !state.currentUser;
+    }
+  }
+
+  function handleAuthModeToggle() {
+    const nextMode = state.authMode === "login" ? "signup" : "login";
+    setAuthMode(nextMode);
+
+    window.requestAnimationFrame(() => {
+      if (nextMode === "signup" && ui.authNicknameInput) {
+        ui.authNicknameInput.focus();
+        return;
+      }
+
+      if (ui.authEmailInput) {
+        ui.authEmailInput.focus();
+      }
+    });
+  }
+
+  async function handleAuthSubmit(event) {
+    event.preventDefault();
+
+    const email = ui.authEmailInput.value.trim().toLowerCase();
+    const password = ui.authPasswordInput.value;
+    const nickname = ui.authNicknameInput
+      ? ui.authNicknameInput.value.trim()
+      : "";
+    const isSignup = state.authMode === "signup";
+
+    if (!email || !password || (isSignup && !nickname)) {
+      showToast("이메일과 비밀번호를 입력해 주세요.");
+      return;
+    }
+
+    ui.authSubmitButton.disabled = true;
+
+    try {
+      if (isSignup) {
+        await requestJson("/api/auth/signup", {
+          method: "POST",
+          body: JSON.stringify({
+            email,
+            password,
+            nickname,
+          }),
+          skipAuthHandling: true,
+        });
+      }
+
+      const loginResult = await requestJson("/api/auth/login", {
+        method: "POST",
+        body: JSON.stringify({
+          email,
+          password,
+        }),
+        skipAuthHandling: true,
+      });
+
+      if (ui.authForm) {
+        ui.authForm.reset();
+      }
+
+      setAuthMode("login");
+      await activateAuthenticatedSession(loginResult.data, {
+        reloadData: true,
+        focusInput: true,
+      });
+      showToast(
+        isSignup
+          ? "회원가입이 완료되어 바로 로그인했습니다."
+          : "로그인되었습니다.",
+        "success",
+      );
+    } catch (error) {
+      console.error(error);
+      showToast(error.message || "인증 처리 중 오류가 발생했습니다.");
+    } finally {
+      ui.authSubmitButton.disabled = false;
+    }
+  }
+
+  async function handleLogout() {
+    if (!state.currentUser) {
+      return;
+    }
+
+    ui.logoutButton.disabled = true;
+
+    try {
+      await requestJson("/api/auth/logout", {
+        method: "POST",
+        skipAuthHandling: true,
+      });
+      window.location.reload();
+    } catch (error) {
+      console.error(error);
+      ui.logoutButton.disabled = false;
+      showToast(error.message || "로그아웃 중 오류가 발생했습니다.");
+    }
   }
 
   async function handleImageSelection(event) {
@@ -352,6 +683,11 @@
   }
 
   async function handleCreateRoom() {
+    if (!state.currentUser) {
+      enterLoggedOutState();
+      return;
+    }
+
     ui.newRoomButton.disabled = true;
 
     try {
@@ -368,6 +704,11 @@
 
   async function handleSendMessage(event) {
     event.preventDefault();
+
+    if (!state.currentUser) {
+      enterLoggedOutState();
+      return;
+    }
 
     const message = ui.messageInput.value.trim();
     const imageBase64 = state.pendingImageBase64;
@@ -442,6 +783,10 @@
   }
 
   function handleRoomListClick(event) {
+    if (!state.currentUser) {
+      return;
+    }
+
     const button = event.target.closest("button[data-room-id]");
     if (!button) {
       return;
@@ -922,19 +1267,28 @@
   }
 
   async function requestJson(url, options = {}) {
+    const { skipAuthHandling = false, headers = {}, ...fetchOptions } = options;
     const response = await fetch(url, {
+      credentials: "include",
       headers: {
         "Content-Type": "application/json",
-        ...(options.headers || {}),
+        ...headers,
       },
-      ...options,
+      ...fetchOptions,
     });
 
     const payload = await response.json().catch(() => ({}));
 
     if (!response.ok || payload.success === false) {
       const message = payload.message || "요청 처리 중 오류가 발생했습니다.";
-      throw new Error(message);
+      const error = new Error(message);
+      error.status = response.status;
+
+      if (response.status === 401 && !skipAuthHandling) {
+        enterLoggedOutState();
+      }
+
+      throw error;
     }
 
     return payload;
