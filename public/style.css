@@ -891,6 +891,10 @@ input,
   padding: 1rem 1rem 0.95rem;
 }
 
+.concept-summary {
+  padding: 1.2rem 1.25rem 1.5rem 1.25rem;
+}
+
 .attachment-preview {
   align-items: center;
   gap: 0.9rem;
