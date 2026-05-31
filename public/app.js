@@ -1,4 +1,6 @@
 (function () {
+  let deferredPrompt;
+
   const state = {
     rooms: [],
     roomMessagesByRoomId: {},
@@ -29,6 +31,12 @@
   document.addEventListener("DOMContentLoaded", initializeApp);
 
   async function initializeApp() {
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.register("/sw.js").catch((error) => {
+        console.error("서비스 워커 등록에 실패했습니다.", error);
+      });
+    }
+
     cacheElements();
     initializeTheme();
     bindEvents();
@@ -90,6 +98,7 @@
     ui.settingsButton = document.getElementById("settings-button");
     ui.logoutButton = document.getElementById("logout-button");
     ui.currentUserLabel = document.getElementById("current-user-label");
+    ui.installAppButton = document.getElementById("install-app-button");
     ui.themeToggleButton = document.getElementById("theme-toggle-button");
     ui.themeToggleIcon = document.getElementById("theme-toggle-icon");
     ui.themeToggleLabel = document.getElementById("theme-toggle-label");
@@ -159,6 +168,9 @@
     ui.imageUploadButton.addEventListener("click", () => ui.imageInput.click());
     ui.imageInput.addEventListener("change", handleImageSelection);
     ui.clearImageButton.addEventListener("click", clearPendingImage);
+    if (ui.installAppButton) {
+      ui.installAppButton.addEventListener("click", handleInstallAppClick);
+    }
     ui.themeToggleButton.addEventListener("click", handleThemeToggle);
     ui.roomList.addEventListener("click", handleRoomListClick);
     ui.openSidebarButton.addEventListener("click", () => openDrawer("sidebar"));
@@ -217,7 +229,39 @@
       ui.logoutButton.addEventListener("click", handleLogout);
     }
     document.addEventListener("click", handleDocumentClick);
+    window.addEventListener("beforeinstallprompt", handleBeforeInstallPrompt);
     window.addEventListener("resize", handleWindowResize);
+  }
+
+  function handleBeforeInstallPrompt(event) {
+    event.preventDefault();
+    deferredPrompt = event;
+
+    if (ui.installAppButton) {
+      ui.installAppButton.classList.remove("hidden");
+    }
+  }
+
+  function handleInstallAppClick() {
+    if (!deferredPrompt || !ui.installAppButton) {
+      return;
+    }
+
+    ui.installAppButton.disabled = true;
+    deferredPrompt.prompt();
+    deferredPrompt.userChoice
+      .then(() => {
+        deferredPrompt = null;
+        ui.installAppButton.classList.add("hidden");
+      })
+      .catch((error) => {
+        console.error("앱 설치 프롬프트 처리 중 오류가 발생했습니다.", error);
+      })
+      .finally(() => {
+        if (ui.installAppButton) {
+          ui.installAppButton.disabled = false;
+        }
+      });
   }
 
   function initializeTheme() {
