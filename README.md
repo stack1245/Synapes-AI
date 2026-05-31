@@ -20,6 +20,9 @@
 - DELETE /api/auth/me
 - GET /api/concepts
 - POST /api/chat/rooms
+- PATCH /api/chat/rooms/:roomId
+- PATCH /api/chat/rooms/:roomId/pin
+- DELETE /api/chat/rooms/:roomId
 - GET /api/chat/rooms
 - GET /api/chat/rooms/:roomId/messages
 - POST /api/chat/message
@@ -52,6 +55,8 @@ PORT=3000
 이메일 인증번호 전송 API는 Gmail SMTP 기준 `EMAIL_USER`, `EMAIL_PASS`를 사용합니다. `/api/auth/send-verification`은 6자리 OTP를 발급해 정확히 3분 뒤 만료되도록 저장하고 메일로 전송하며, `/api/auth/verify-code`는 이메일과 인증번호를 검증한 뒤 성공 시 해당 OTP 레코드를 삭제합니다. 회원가입 API는 `passwordConfirm`이 `password`와 일치하는지도 서버에서 다시 검증합니다.
 
 로그인된 사용자는 `/api/auth/me`에 `PUT` 요청을 보내 닉네임을 바꾸거나 현재 비밀번호 검증 후 새 비밀번호로 변경할 수 있습니다. `/api/auth/me`에 `DELETE` 요청을 보내면 계정이 삭제되고, 연결된 채팅방과 메시지도 함께 정리된 뒤 로그아웃 처리됩니다.
+
+로그인된 사용자는 채팅방 이름 변경, 고정 토글, 삭제를 위한 `/api/chat/rooms/:roomId` 계열 API를 사용할 수 있습니다. 방 목록 조회는 `is_pinned DESC` 기준이 먼저 적용되어 고정된 방이 항상 최상단에 표시됩니다.
 
 ### 3. 서버 실행
 

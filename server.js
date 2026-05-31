@@ -472,11 +472,23 @@ async function sendVerificationEmail(email, code) {
 
 async function getRoomByIdForUser(roomId, userId) {
   return db.get(
-    `SELECT id, user_id, title, created_at, updated_at
+    `SELECT id, user_id, title, is_pinned, created_at, updated_at
      FROM chat_rooms
      WHERE id = ? AND user_id = ?`,
     [roomId, userId],
   );
+}
+
+async function ensureChatRoomsPinnedColumn() {
+  const columns = await db.all(`PRAGMA table_info(chat_rooms)`);
+  const hasPinnedColumn = columns.some((column) => column.name === "is_pinned");
+
+  if (!hasPinnedColumn) {
+    await db.exec(`
+      ALTER TABLE chat_rooms
+      ADD COLUMN is_pinned INTEGER NOT NULL DEFAULT 0
+    `);
+  }
 }
 
 async function authenticateToken(req, res, next) {
@@ -530,6 +542,7 @@ async function initializeDatabase() {
 
   const schemaSql = await fs.readFile(SCHEMA_PATH, "utf8");
   await db.exec(schemaSql);
+  await ensureChatRoomsPinnedColumn();
   await db.exec(`
     CREATE TABLE IF NOT EXISTS email_verifications (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -944,13 +957,147 @@ app.post("/api/chat/rooms", authenticateToken, async (req, res) => {
   }
 });
 
+app.patch("/api/chat/rooms/:roomId", authenticateToken, async (req, res) => {
+  try {
+    const parsedRoomId = parseOptionalInteger(req.params.roomId);
+
+    if (parsedRoomId === null) {
+      return res.status(400).json({
+        success: false,
+        message: "유효한 roomId가 필요합니다.",
+      });
+    }
+
+    const room = await getRoomByIdForUser(parsedRoomId, req.user.id);
+
+    if (!room) {
+      return res.status(404).json({
+        success: false,
+        message: "존재하지 않는 채팅방입니다.",
+      });
+    }
+
+    const title = normalizeRoomTitle(req.body?.title);
+
+    await db.run(
+      `UPDATE chat_rooms
+       SET title = ?, updated_at = CURRENT_TIMESTAMP
+       WHERE id = ? AND user_id = ?`,
+      [title, parsedRoomId, req.user.id],
+    );
+
+    const updatedRoom = await getRoomByIdForUser(parsedRoomId, req.user.id);
+
+    return res.json({
+      success: true,
+      data: updatedRoom,
+    });
+  } catch (error) {
+    console.error("Failed to rename chat room:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "채팅방 이름 변경 중 오류가 발생했습니다.",
+    });
+  }
+});
+
+app.patch(
+  "/api/chat/rooms/:roomId/pin",
+  authenticateToken,
+  async (req, res) => {
+    try {
+      const parsedRoomId = parseOptionalInteger(req.params.roomId);
+
+      if (parsedRoomId === null) {
+        return res.status(400).json({
+          success: false,
+          message: "유효한 roomId가 필요합니다.",
+        });
+      }
+
+      const room = await getRoomByIdForUser(parsedRoomId, req.user.id);
+
+      if (!room) {
+        return res.status(404).json({
+          success: false,
+          message: "존재하지 않는 채팅방입니다.",
+        });
+      }
+
+      const nextPinnedValue = Number(room.is_pinned) === 1 ? 0 : 1;
+
+      await db.run(
+        `UPDATE chat_rooms
+         SET is_pinned = ?, updated_at = CURRENT_TIMESTAMP
+         WHERE id = ? AND user_id = ?`,
+        [nextPinnedValue, parsedRoomId, req.user.id],
+      );
+
+      const updatedRoom = await getRoomByIdForUser(parsedRoomId, req.user.id);
+
+      return res.json({
+        success: true,
+        data: updatedRoom,
+      });
+    } catch (error) {
+      console.error("Failed to toggle chat room pin:", error);
+
+      return res.status(500).json({
+        success: false,
+        message: "채팅방 고정 상태 변경 중 오류가 발생했습니다.",
+      });
+    }
+  },
+);
+
+app.delete("/api/chat/rooms/:roomId", authenticateToken, async (req, res) => {
+  try {
+    const parsedRoomId = parseOptionalInteger(req.params.roomId);
+
+    if (parsedRoomId === null) {
+      return res.status(400).json({
+        success: false,
+        message: "유효한 roomId가 필요합니다.",
+      });
+    }
+
+    const room = await getRoomByIdForUser(parsedRoomId, req.user.id);
+
+    if (!room) {
+      return res.status(404).json({
+        success: false,
+        message: "존재하지 않는 채팅방입니다.",
+      });
+    }
+
+    await db.run(
+      `DELETE FROM chat_rooms
+         WHERE id = ? AND user_id = ?`,
+      [parsedRoomId, req.user.id],
+    );
+
+    return res.json({
+      success: true,
+      message: "채팅방이 삭제되었습니다.",
+    });
+  } catch (error) {
+    console.error("Failed to delete chat room:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "채팅방 삭제 중 오류가 발생했습니다.",
+    });
+  }
+});
+
 app.get("/api/chat/rooms", authenticateToken, async (req, res) => {
   try {
     const rooms = await db.all(
-      `SELECT id, user_id, title, created_at, updated_at
+      `SELECT id, user_id, title, is_pinned, created_at, updated_at
        FROM chat_rooms
        WHERE user_id = ?
-       ORDER BY datetime(created_at) DESC, id DESC`,
+       ORDER BY is_pinned DESC, datetime(created_at) DESC, id DESC`,
       [req.user.id],
     );
 
