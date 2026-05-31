@@ -1945,8 +1945,8 @@
         layout: {
           name: "breadthfirst",
           directed: true,
-          padding: 22,
-          spacingFactor: 1.25,
+          padding: 40,
+          spacingFactor: 2.8,
           animate: false,
         },
         minZoom: 0.45,
@@ -1965,8 +1965,8 @@
         .layout({
           name: "breadthfirst",
           directed: true,
-          padding: 22,
-          spacingFactor: 1.25,
+          padding: 40,
+          spacingFactor: 2.8,
           animate: false,
         })
         .run();
