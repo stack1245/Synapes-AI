@@ -7,9 +7,12 @@
     cy: null,
     isSending: false,
     toastTimer: null,
+    uiOnlyMessagesByRoomId: {},
   };
 
   const ui = {};
+  const ONBOARDING_MESSAGE =
+    "안녕하세요! 저는 시냅스 AI 튜터입니다. 헷갈리는 문제나 개념을 물어보세요.";
 
   document.addEventListener("DOMContentLoaded", initializeApp);
 
@@ -76,6 +79,59 @@
     window.addEventListener("resize", handleWindowResize);
   }
 
+  function getUiOnlyMessages(roomId) {
+    if (!roomId) {
+      return [];
+    }
+
+    return state.uiOnlyMessagesByRoomId[roomId] || [];
+  }
+
+  function setUiOnlyMessages(roomId, messages) {
+    if (!roomId) {
+      return;
+    }
+
+    state.uiOnlyMessagesByRoomId[roomId] = messages;
+  }
+
+  function createOnboardingMessage() {
+    return {
+      sender_role: "system",
+      content: ONBOARDING_MESSAGE,
+      concept_node_id: null,
+      created_at: new Date().toISOString(),
+    };
+  }
+
+  async function createRoom(options = {}) {
+    const { title, withOnboarding = false } = options;
+    const payload = {};
+
+    if (typeof title === "string" && title.trim()) {
+      payload.title = title.trim();
+    }
+
+    const result = await requestJson("/api/chat/rooms", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+
+    const room = result.data;
+    if (!room) {
+      throw new Error("채팅방 생성 결과가 비어 있습니다.");
+    }
+
+    if (withOnboarding) {
+      setUiOnlyMessages(room.id, [createOnboardingMessage()]);
+    }
+
+    state.rooms = [room, ...state.rooms.filter((item) => item.id !== room.id)];
+    renderRoomList();
+
+    return room;
+  }
+
   async function loadConcepts() {
     try {
       ui.conceptPanelTitle.textContent = "개념 트리 불러오는 중";
@@ -109,9 +165,8 @@
       renderRoomList();
 
       if (state.rooms.length === 0) {
-        state.currentRoomId = null;
-        updateSelectedRoomChip();
-        renderMessageList([]);
+        const onboardingRoom = await createRoom({ withOnboarding: true });
+        await setActiveRoom(onboardingRoom.id);
         return;
       }
 
@@ -146,7 +201,12 @@
     try {
       renderLoadingMessages();
       const result = await requestJson(`/api/chat/rooms/${roomId}/messages`);
-      renderMessageList(Array.isArray(result.data) ? result.data : []);
+      const persistedMessages = Array.isArray(result.data) ? result.data : [];
+      const mergedMessages = [
+        ...getUiOnlyMessages(roomId),
+        ...persistedMessages,
+      ];
+      renderMessageList(mergedMessages);
     } catch (error) {
       console.error(error);
       renderMessageList(
@@ -161,21 +221,7 @@
     ui.newRoomButton.disabled = true;
 
     try {
-      const result = await requestJson("/api/chat/rooms", {
-        method: "POST",
-        body: JSON.stringify({}),
-      });
-
-      const room = result.data;
-      if (!room) {
-        throw new Error("채팅방 생성 결과가 비어 있습니다.");
-      }
-
-      state.rooms = [
-        room,
-        ...state.rooms.filter((item) => item.id !== room.id),
-      ];
-      renderRoomList();
+      const room = await createRoom();
       await setActiveRoom(room.id);
       showToast("새 오답 세션을 만들었습니다.", "success");
     } catch (error) {
@@ -200,23 +246,11 @@
     try {
       let roomId = state.currentRoomId;
       if (!roomId) {
-        const createdRoom = await requestJson("/api/chat/rooms", {
-          method: "POST",
-          body: JSON.stringify({}),
+        const room = await createRoom({
+          withOnboarding: state.rooms.length === 0,
         });
-
-        if (!createdRoom.data) {
-          throw new Error("메시지를 보낼 채팅방을 만들지 못했습니다.");
-        }
-
-        state.rooms = [
-          createdRoom.data,
-          ...state.rooms.filter((room) => room.id !== createdRoom.data.id),
-        ];
-        roomId = createdRoom.data.id;
-        state.currentRoomId = roomId;
-        renderRoomList();
-        updateSelectedRoomChip();
+        roomId = room.id;
+        await setActiveRoom(roomId);
       }
 
       appendPendingUserMessage(message);
@@ -236,7 +270,7 @@
       });
 
       if (result.conceptId) {
-        selectConcept(result.conceptId);
+        selectConcept(result.conceptId, { animate: true });
       }
 
       await loadMessages(roomId);
@@ -518,7 +552,7 @@
 
       state.cy.on("tap", "node", (event) => {
         const conceptId = Number.parseInt(event.target.id(), 10);
-        selectConcept(conceptId);
+        selectConcept(conceptId, { animate: true });
       });
     } else {
       state.cy.elements().remove();
@@ -538,13 +572,13 @@
     refreshCyViewport();
   }
 
-  function selectConcept(conceptId) {
+  function selectConcept(conceptId, options = {}) {
     state.currentConceptId = conceptId;
     updateSelectedConceptChip();
-    syncCySelection();
+    syncCySelection(options);
   }
 
-  function syncCySelection() {
+  function syncCySelection(options = {}) {
     if (!state.cy) {
       return;
     }
@@ -566,6 +600,32 @@
     ui.conceptPanelTitle.textContent = targetNode.data("label");
     ui.conceptPanelDescription.textContent =
       "이 개념을 기준으로 AI 답변의 추천 개념 흐름을 유도합니다.";
+    focusConceptNode(targetNode, options.animate === true);
+  }
+
+  function focusConceptNode(targetNode, shouldAnimate) {
+    if (!state.cy || !targetNode || targetNode.empty()) {
+      return;
+    }
+
+    const targetZoom = Math.min(
+      state.cy.maxZoom(),
+      Math.max(state.cy.zoom(), 1.15),
+    );
+
+    state.cy.stop();
+
+    if (shouldAnimate) {
+      state.cy.animate({
+        center: { eles: targetNode },
+        zoom: targetZoom,
+        duration: 500,
+        easing: "ease-in-out-cubic",
+      });
+      return;
+    }
+
+    state.cy.center(targetNode);
   }
 
   function updateModeChip() {
