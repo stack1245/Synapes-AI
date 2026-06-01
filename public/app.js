@@ -25,7 +25,7 @@
 
   const ui = {};
   const ONBOARDING_MESSAGE =
-    "안녕하세요! 저는 시냅스 AI 튜터입니다. 헷갈리는 문제나 개념을 물어보세요.";
+    "안녕하세요! 저는 시냅스 AI입니다. 헷갈리는 문제나 개념을 물어보세요.";
   const THEME_STORAGE_KEY = "synapes-theme";
 
   document.addEventListener("DOMContentLoaded", initializeApp);
@@ -1815,8 +1815,8 @@
       senderRole === "user"
         ? "나"
         : senderRole === "assistant"
-          ? "시냅스"
-          : "시냅스";
+          ? "시냅스 AI"
+          : "시냅스 AI";
     const conceptName = findConceptName(message.concept_node_id);
     const dateLabel = message.created_at
       ? formatTimeLabel(message.created_at)
@@ -1865,7 +1865,7 @@
       `
         <article id="typing-indicator" class="message-row assistant">
           <div class="message-card assistant">
-            <div class="message-role mb-3 text-xs font-display font-semibold uppercase tracking-[0.18em]">AI 튜터</div>
+            <div class="message-role mb-3 text-xs font-display font-semibold uppercase tracking-[0.18em]">시냅스 AI</div>
             <div class="typing-dots"><span></span><span></span><span></span></div>
           </div>
         </article>
