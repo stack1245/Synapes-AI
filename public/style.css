@@ -1305,6 +1305,13 @@ input,
     height: auto !important;
     min-height: 100% !important;
     -webkit-overflow-scrolling: touch;
+    touch-action: manipulation;
+  }
+
+  input,
+  textarea,
+  select {
+    font-size: 16px !important;
   }
 
   #auth-overlay {
