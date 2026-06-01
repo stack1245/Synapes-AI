@@ -1518,6 +1518,10 @@ app.use((err, req, res, next) => {
 async function startServer() {
   try {
     getJwtSecret();
+
+    const dbDirectoryPath = path.dirname(DB_PATH);
+    await fs.mkdir(dbDirectoryPath, { recursive: true });
+
     await initializeDatabase();
 
     app.listen(PORT, () => {
