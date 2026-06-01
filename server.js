@@ -353,33 +353,157 @@ function parseAssistantJson(content) {
     throw new Error("AI 응답이 비어 있습니다.");
   }
 
-  const sanitizeJsonCandidate = (value) => {
-    const cleaned = value
+  const normalizeCandidate = (value) =>
+    value
       .replace(/```json\s*/gi, "")
       .replace(/```\s*/g, "")
       .trim();
 
-    return cleaned.replace(/(?<=:\s*")(.*?)(?="(,|\s*\}))/gs, (match) =>
-      match.replace(/\n/g, "\\n").replace(/\r/g, "\\r").replace(/\t/g, "\\t"),
-    );
-  };
+  const sanitizeJsonStrings = (value) => {
+    let result = "";
+    let isInsideString = false;
+    let isEscaped = false;
 
-  const sanitizedContent = sanitizeJsonCandidate(content);
+    for (const char of value) {
+      if (isEscaped) {
+        result += char;
+        isEscaped = false;
+        continue;
+      }
 
-  try {
-    return JSON.parse(sanitizedContent);
-  } catch (parseError) {
-    const jsonStart = sanitizedContent.indexOf("{");
-    const jsonEnd = sanitizedContent.lastIndexOf("}");
+      if (char === "\\") {
+        result += char;
+        if (isInsideString) {
+          isEscaped = true;
+        }
+        continue;
+      }
 
-    if (jsonStart !== -1 && jsonEnd !== -1 && jsonEnd > jsonStart) {
-      return JSON.parse(
-        sanitizeJsonCandidate(sanitizedContent.slice(jsonStart, jsonEnd + 1)),
-      );
+      if (char === '"') {
+        result += char;
+        isInsideString = !isInsideString;
+        continue;
+      }
+
+      if (isInsideString && char === "\n") {
+        result += "\\n";
+        continue;
+      }
+
+      if (isInsideString && char === "\r") {
+        result += "\\r";
+        continue;
+      }
+
+      if (isInsideString && char === "\t") {
+        result += "\\t";
+        continue;
+      }
+
+      result += char;
     }
 
-    throw parseError;
+    return result;
+  };
+
+  const tryParseJsonObject = (value) => {
+    try {
+      const parsedValue = JSON.parse(
+        sanitizeJsonStrings(normalizeCandidate(value)),
+      );
+
+      if (
+        parsedValue &&
+        typeof parsedValue === "object" &&
+        !Array.isArray(parsedValue)
+      ) {
+        return { ok: true, value: parsedValue };
+      }
+
+      return {
+        ok: false,
+        error: new Error("AI 응답 JSON은 객체 형태여야 합니다."),
+      };
+    } catch (error) {
+      return { ok: false, error };
+    }
+  };
+
+  const extractJsonObjectCandidates = (value) => {
+    const candidates = [];
+
+    for (let startIndex = 0; startIndex < value.length; startIndex += 1) {
+      if (value[startIndex] !== "{") {
+        continue;
+      }
+
+      let depth = 0;
+      let isInsideString = false;
+      let isEscaped = false;
+
+      for (let index = startIndex; index < value.length; index += 1) {
+        const char = value[index];
+
+        if (isEscaped) {
+          isEscaped = false;
+          continue;
+        }
+
+        if (char === "\\") {
+          if (isInsideString) {
+            isEscaped = true;
+          }
+          continue;
+        }
+
+        if (char === '"') {
+          isInsideString = !isInsideString;
+          continue;
+        }
+
+        if (isInsideString) {
+          continue;
+        }
+
+        if (char === "{") {
+          depth += 1;
+          continue;
+        }
+
+        if (char === "}") {
+          depth -= 1;
+
+          if (depth === 0) {
+            candidates.push(value.slice(startIndex, index + 1));
+            break;
+          }
+        }
+      }
+    }
+
+    return candidates;
+  };
+
+  const normalizedContent = normalizeCandidate(content);
+  const directParseResult = tryParseJsonObject(normalizedContent);
+
+  if (directParseResult.ok) {
+    return directParseResult.value;
   }
+
+  let lastError = directParseResult.error;
+
+  for (const candidate of extractJsonObjectCandidates(normalizedContent)) {
+    const parsedCandidate = tryParseJsonObject(candidate);
+
+    if (parsedCandidate.ok) {
+      return parsedCandidate.value;
+    }
+
+    lastError = parsedCandidate.error;
+  }
+
+  throw lastError || new Error("AI 응답에서 JSON 객체를 찾지 못했습니다.");
 }
 
 function getFallbackConceptId(currentConceptId, concepts) {
