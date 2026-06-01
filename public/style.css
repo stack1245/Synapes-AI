@@ -1232,4 +1232,25 @@ input,
     min-height: -webkit-fill-available;
     overflow-y: visible !important;
   }
+
+  #auth-overlay {
+    display: block !important;
+    overflow-y: auto !important;
+    -webkit-overflow-scrolling: touch;
+    padding: 10px !important;
+  }
+
+  .auth-modal {
+    margin: 0 auto;
+    height: auto !important;
+    max-height: none !important;
+    overflow-y: visible !important;
+  }
+
+  .auth-form-panel,
+  .auth-showcase {
+    height: auto !important;
+    min-height: auto !important;
+    overflow-y: visible !important;
+  }
 }
