@@ -443,6 +443,8 @@
   function updateVerificationUi() {
     const isSignup = state.authMode === "signup";
     const isVerified = state.isEmailVerified;
+    const shouldShowVerificationTimer =
+      isSignup && state.verificationStatus !== "idle";
 
     if (ui.authVerificationField) {
       ui.authVerificationField.classList.toggle("hidden", !isSignup);
@@ -482,6 +484,10 @@
 
     if (ui.authVerificationTimer) {
       ui.authVerificationTimer.classList.toggle(
+        "hidden",
+        !shouldShowVerificationTimer,
+      );
+      ui.authVerificationTimer.classList.toggle(
         "is-expired",
         state.verificationStatus === "expired",
       );
@@ -490,7 +496,7 @@
         state.verificationStatus === "verified",
       );
 
-      if (!isSignup) {
+      if (!shouldShowVerificationTimer) {
         ui.authVerificationTimer.textContent = "03:00";
       } else if (state.verificationStatus === "verified") {
         ui.authVerificationTimer.textContent = "인증 완료";
