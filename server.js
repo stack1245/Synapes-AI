@@ -179,10 +179,16 @@ function getEmailTransporter() {
     const { emailUser, emailPass } = getEmailCredentials();
 
     emailTransporter = nodemailer.createTransport({
-      service: "gmail",
+      host: "smtp.gmail.com",
+      port: 587,
+      secure: false,
       auth: {
         user: emailUser,
         pass: emailPass,
+      },
+      localAddress: "0.0.0.0",
+      tls: {
+        rejectUnauthorized: false,
       },
     });
   }
