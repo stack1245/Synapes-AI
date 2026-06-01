@@ -17,7 +17,9 @@ const { open } = require("sqlite");
 
 const app = express();
 const PORT = Number(process.env.PORT) || 3000;
-const DB_PATH = path.join(__dirname, "database.db");
+const DB_PATH = process.env.RENDER
+  ? "/opt/render/project/src/data/database.db"
+  : path.join(__dirname, "database.db");
 const PUBLIC_DIR = path.join(__dirname, "public");
 const SCHEMA_PATH = path.join(__dirname, "schema.sql");
 const GEMINI_MODEL =
