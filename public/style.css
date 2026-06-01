@@ -981,6 +981,16 @@ input,
   color: var(--bubble-system-text);
 }
 
+.message-attached-image {
+  max-width: 100%;
+  max-height: 280px;
+  border-radius: 1rem;
+  object-fit: contain;
+  border: 1px solid var(--panel-border);
+  margin-top: 0.8rem;
+  background: var(--panel-bg);
+}
+
 .message-meta {
   color: var(--message-meta);
 }

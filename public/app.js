@@ -1443,7 +1443,10 @@
         await setActiveRoom(roomId);
       }
 
-      appendPendingUserMessage(buildOutgoingPreviewText(message, hasImage));
+      appendPendingUserMessage(
+        buildOutgoingPreviewText(message, hasImage),
+        imageBase64,
+      );
       appendTypingIndicator();
 
       ui.messageInput.value = "";
@@ -1858,6 +1861,9 @@
     const dateLabel = message.created_at
       ? formatTimeLabel(message.created_at)
       : "방금";
+    const imageMarkup = message.image_base64
+      ? `<div class="mt-3"><img src="${message.image_base64}" alt="첨부 이미지" class="message-attached-image" /></div>`
+      : "";
 
     return `
       <article class="message-row ${senderRole}">
@@ -1868,12 +1874,13 @@
             ${conceptName ? `<span class="message-concept-chip">${escapeHtml(conceptName)}</span>` : ""}
           </div>
           <div class="message-body text-[15px]">${escapeHtml(message.content || "")}</div>
+          ${imageMarkup}
         </div>
       </article>
     `;
   }
 
-  function appendPendingUserMessage(content) {
+  function appendPendingUserMessage(content, imageBase64 = null) {
     if (
       ui.messageList.firstElementChild &&
       ui.messageList.firstElementChild.matches("div")
@@ -1886,6 +1893,7 @@
       buildMessageMarkup({
         sender_role: "user",
         content,
+        image_base64: imageBase64,
         concept_node_id: state.currentConceptId,
         created_at: new Date().toISOString(),
       }),

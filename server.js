@@ -608,11 +608,23 @@ function resolveConceptId(candidateConceptId, currentConceptId, concepts) {
 // Data access helpers
 // -----------------------------------------------------------------------------
 
-async function saveChatMessage(roomId, senderRole, content, conceptNodeId) {
+async function saveChatMessage(
+  roomId,
+  senderRole,
+  content,
+  conceptNodeId,
+  imageBase64 = null,
+) {
   return db.run(
-    `INSERT INTO chat_messages (room_id, sender_role, content, concept_node_id)
-     VALUES (?, ?, ?, ?)`,
-    [roomId, senderRole, content, conceptNodeId],
+    `INSERT INTO chat_messages (
+       room_id,
+       sender_role,
+       content,
+       concept_node_id,
+       image_base64
+     )
+     VALUES (?, ?, ?, ?, ?)`,
+    [roomId, senderRole, content, conceptNodeId, imageBase64],
   );
 }
 
@@ -744,6 +756,20 @@ async function ensureChatRoomsPinnedColumn() {
   }
 }
 
+async function ensureChatMessagesImageColumn() {
+  const columns = await db.all(`PRAGMA table_info(chat_messages)`);
+  const hasImageBase64Column = columns.some(
+    (column) => column.name === "image_base64",
+  );
+
+  if (!hasImageBase64Column) {
+    await db.exec(`
+      ALTER TABLE chat_messages
+      ADD COLUMN image_base64 TEXT
+    `);
+  }
+}
+
 // -----------------------------------------------------------------------------
 // Authentication middleware and database bootstrap
 // -----------------------------------------------------------------------------
@@ -792,6 +818,7 @@ async function initializeDatabase() {
   const schemaSql = await fs.readFile(SCHEMA_PATH, "utf8");
   await db.exec(schemaSql);
   await ensureChatRoomsPinnedColumn();
+  await ensureChatMessagesImageColumn();
   await db.exec(`
     CREATE TABLE IF NOT EXISTS email_verifications (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1334,7 +1361,7 @@ app.get(
       const { roomId } = roomContext;
 
       const messages = await db.all(
-        `SELECT id, room_id, sender_role, content, concept_node_id, created_at
+        `SELECT id, room_id, sender_role, content, concept_node_id, image_base64, created_at
        FROM chat_messages
        WHERE room_id = ?
        ORDER BY datetime(created_at) ASC, id ASC`,
@@ -1402,6 +1429,7 @@ app.post("/api/chat/message", authenticateToken, async (req, res) => {
       "user",
       buildStoredUserMessage(trimmedMessage, hasImageAttachment),
       parsedCurrentConceptId,
+      hasImageAttachment ? normalizedImageBase64 : null,
     );
 
     const concepts = await db.all(
@@ -1451,6 +1479,7 @@ app.post("/api/chat/message", authenticateToken, async (req, res) => {
       "assistant",
       reply,
       recommendedConceptId,
+      null,
     );
 
     return res.json({
