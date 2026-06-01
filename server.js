@@ -8,7 +8,7 @@ const { GoogleGenerativeAI } = require("@google/generative-ai");
 const jwt = require("jsonwebtoken");
 const nodemailer = require("nodemailer");
 const path = require("path");
-const sqlite3 = require("better-sqlite3");
+const sqlite3 = require("sqlite3");
 const { open } = require("sqlite");
 
 const app = express();
@@ -701,7 +701,7 @@ async function authenticateToken(req, res, next) {
 async function initializeDatabase() {
   db = await open({
     filename: DB_PATH,
-    driver: sqlite3.Database,
+    driver: sqlite3.verbose().Database,
   });
 
   const schemaSql = await fs.readFile(SCHEMA_PATH, "utf8");
