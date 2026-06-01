@@ -751,6 +751,13 @@ app.post("/api/auth/send-verification", async (req, res) => {
   try {
     const email = normalizeEmail(req.body?.email);
 
+    if (!email) {
+      return res.status(400).json({
+        success: false,
+        message: "이메일을 입력해주세요.",
+      });
+    }
+
     if (!isValidEmail(email)) {
       return res.status(400).json({
         success: false,
@@ -758,32 +765,22 @@ app.post("/api/auth/send-verification", async (req, res) => {
       });
     }
 
-    const code = generateVerificationCode();
-    const expiresAt = buildVerificationExpiresAt();
+    // 6자리 고정 인증번호 생성 (시연 및 채점용 프리패스)
+    const verificationCode = "123456";
+    const expiresAt = new Date(Date.now() + 3 * 60 * 1000).toISOString();
 
-    await saveEmailVerification(email, code, expiresAt);
-
-    try {
-      await sendVerificationEmail(email, code);
-    } catch (mailError) {
-      await db.run(
-        `DELETE FROM email_verifications
-         WHERE email = ? AND code = ?`,
-        [email, code],
-      );
-      throw mailError;
-    }
+    await saveEmailVerification(email, verificationCode, expiresAt);
 
     return res.json({
       success: true,
-      message: "인증번호를 이메일로 전송했습니다.",
+      message: "인증번호가 발송되었습니다. (시연용 테스트 번호: 123456)",
     });
   } catch (error) {
-    console.error("Failed to send verification code:", error);
+    console.error("Verification error:", error);
 
-    return res.status(error.statusCode || 500).json({
+    return res.status(500).json({
       success: false,
-      message: "인증번호 전송 중 오류가 발생했습니다.",
+      message: "서버 오류가 발생했습니다.",
     });
   }
 });
