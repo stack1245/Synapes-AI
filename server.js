@@ -8,7 +8,7 @@ const { GoogleGenerativeAI } = require("@google/generative-ai");
 const jwt = require("jsonwebtoken");
 const nodemailer = require("nodemailer");
 const path = require("path");
-const sqlite3 = require("sqlite3");
+const sqlite3 = require("better-sqlite3");
 const { open } = require("sqlite");
 
 const app = express();
