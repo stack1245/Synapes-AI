@@ -128,7 +128,6 @@
     ui.authForm = document.getElementById("auth-form");
     ui.authModeBadge = document.getElementById("auth-mode-badge");
     ui.authTitle = document.getElementById("auth-title");
-    ui.authSubtitle = document.getElementById("auth-subtitle");
     ui.authEmailInput = document.getElementById("auth-email-input");
     ui.authSendVerificationButton = document.getElementById(
       "auth-send-verification-button",
@@ -710,15 +709,7 @@
     }
 
     if (ui.authTitle) {
-      ui.authTitle.textContent = isSignup
-        ? "처음 시작하는 학습 계정을 만들어 보세요"
-        : "이전 학습 세션으로 바로 이어가세요";
-    }
-
-    if (ui.authSubtitle) {
-      ui.authSubtitle.textContent = isSignup
-        ? "이메일과 닉네임을 등록하면 내 오답 세션과 개념 흐름이 개인 계정에 저장됩니다."
-        : "로그인하면 저장된 세션과 개념 추천 흐름을 계속 이어서 볼 수 있습니다.";
+      ui.authTitle.textContent = isSignup ? "회원가입" : "로그인";
     }
 
     if (ui.authNicknameField) {

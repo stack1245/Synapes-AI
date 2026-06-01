@@ -45,18 +45,9 @@
   --toast-bg: rgba(30, 41, 59, 0.9);
   --toast-text: #ffffff;
   --auth-backdrop: rgba(244, 239, 231, 0.78);
-  --auth-showcase-bg: linear-gradient(
-    145deg,
-    #f59b64 0%,
-    #f2b07e 48%,
-    #f6d7be 100%
-  );
-  --auth-showcase-text: #fffaf5;
   --auth-panel-bg: rgba(255, 255, 255, 0.88);
   --auth-field-bg: rgba(248, 245, 239, 0.92);
   --auth-field-border: #e6dfd3;
-  --auth-note-bg: rgba(255, 255, 255, 0.18);
-  --auth-note-border: rgba(255, 255, 255, 0.24);
 }
 
 html.dark {
@@ -105,18 +96,9 @@ html.dark {
   --toast-bg: rgba(15, 23, 42, 0.94);
   --toast-text: #f8fafc;
   --auth-backdrop: rgba(12, 16, 23, 0.76);
-  --auth-showcase-bg: linear-gradient(
-    155deg,
-    #f4a261 0%,
-    #bd6a37 50%,
-    #5c3d2c 100%
-  );
-  --auth-showcase-text: #fff9f4;
   --auth-panel-bg: rgba(35, 39, 46, 0.92);
   --auth-field-bg: rgba(43, 48, 56, 0.96);
   --auth-field-border: #404754;
-  --auth-note-bg: rgba(255, 255, 255, 0.1);
-  --auth-note-border: rgba(255, 255, 255, 0.12);
 }
 
 /* --- [Reset & Base] --- */
@@ -213,86 +195,13 @@ input,
 }
 
 .auth-modal {
-  display: grid;
-  width: min(100%, 980px);
+  display: block;
+  width: min(100%, 420px);
   overflow: hidden;
-  border: 1px solid var(--panel-border);
-  border-radius: 2.2rem;
+  border: 1px solid var(--panel-border-soft);
+  border-radius: 1.7rem;
   background: var(--panel-bg);
-  box-shadow: var(--surface-shadow);
-  grid-template-columns: minmax(0, 1.08fr) minmax(340px, 0.92fr);
-}
-
-.auth-showcase {
-  display: flex;
-  min-height: 560px;
-  flex-direction: column;
-  justify-content: space-between;
-  gap: 2rem;
-  padding: clamp(2rem, 4vw, 3.25rem);
-  background: var(--auth-showcase-bg);
-  color: var(--auth-showcase-text);
-}
-
-.auth-kicker {
-  color: rgba(255, 250, 245, 0.82);
-}
-
-.auth-showcase-title {
-  margin: 1rem 0 0;
-  font-family: "Manrope", sans-serif;
-  font-size: clamp(2rem, 4vw, 3.15rem);
-  font-weight: 800;
-  line-height: 1.12;
-}
-
-.auth-showcase-copy {
-  max-width: 32rem;
-  margin-top: 1.15rem;
-  color: rgba(255, 250, 245, 0.84);
-  font-size: 0.98rem;
-  line-height: 1.95;
-}
-
-.auth-note-stack {
-  display: grid;
-  gap: 1rem;
-}
-
-.auth-note-card {
-  display: flex;
-  align-items: flex-start;
-  gap: 0.95rem;
-  border: 1px solid var(--auth-note-border);
-  border-radius: 1.5rem;
-  background: var(--auth-note-bg);
-  padding: 1rem 1.05rem;
-}
-
-.auth-note-icon {
-  display: inline-flex;
-  height: 2.6rem;
-  width: 2.6rem;
-  flex-shrink: 0;
-  align-items: center;
-  justify-content: center;
-  border-radius: 1rem;
-  background: rgba(255, 255, 255, 0.16);
-  color: #fff8f2;
-}
-
-.auth-note-title {
-  color: #fffdf9;
-  font-family: "Manrope", sans-serif;
-  font-size: 0.98rem;
-  font-weight: 700;
-}
-
-.auth-note-copy {
-  margin-top: 0.35rem;
-  color: rgba(255, 250, 245, 0.8);
-  font-size: 0.88rem;
-  line-height: 1.75;
+  box-shadow: var(--surface-shadow-soft);
 }
 
 .auth-form-panel {
@@ -300,7 +209,7 @@ input,
   flex-direction: column;
   justify-content: center;
   gap: 0.8rem;
-  padding: clamp(1.8rem, 4vw, 3rem);
+  padding: 1.5rem 1.35rem;
   background: var(--auth-panel-bg);
 }
 
@@ -326,13 +235,6 @@ input,
   font-size: 2rem;
   font-weight: 800;
   line-height: 1.2;
-}
-
-.auth-subtitle {
-  margin-top: 0.95rem;
-  color: var(--text-secondary);
-  font-size: 0.94rem;
-  line-height: 1.9;
 }
 
 .auth-form {
@@ -1172,14 +1074,6 @@ input,
 
 /* --- [Media Queries] --- */
 @media (max-width: 1023px) {
-  .auth-modal {
-    grid-template-columns: 1fr;
-  }
-
-  .auth-showcase {
-    min-height: auto;
-  }
-
   .sidebar-drawer {
     position: fixed;
     left: 0;
@@ -1250,8 +1144,7 @@ input,
     padding: 1.4rem;
   }
 
-  .auth-form-panel,
-  .auth-showcase {
+  .auth-form-panel {
     padding: 1.4rem;
   }
 
@@ -1367,9 +1260,8 @@ input,
   }
 
   .auth-modal {
-    display: flex !important;
-    flex-direction: column !important;
-    width: min(100%, 560px);
+    display: block !important;
+    width: min(100%, 420px);
     margin: 0 auto;
     height: auto !important;
     max-height: none !important;
@@ -1377,15 +1269,6 @@ input,
   }
 
   .auth-form-panel {
-    order: 1;
-  }
-
-  .auth-showcase {
-    order: 2;
-  }
-
-  .auth-form-panel,
-  .auth-showcase {
     height: auto !important;
     min-height: auto !important;
     overflow-y: visible !important;
