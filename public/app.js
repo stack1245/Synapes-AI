@@ -343,14 +343,22 @@
   }
 
   function updateThemeToggleUi(theme) {
+    const nextLabel = theme === "dark" ? "라이트 모드" : "다크 모드";
+
     if (theme === "dark") {
       ui.themeToggleIcon.className = "fa-solid fa-sun";
-      ui.themeToggleLabel.textContent = "라이트 모드";
-      return;
+    } else {
+      ui.themeToggleIcon.className = "fa-solid fa-moon";
     }
 
-    ui.themeToggleIcon.className = "fa-solid fa-moon";
-    ui.themeToggleLabel.textContent = "다크 모드";
+    if (ui.themeToggleLabel) {
+      ui.themeToggleLabel.textContent = nextLabel;
+    }
+
+    if (ui.themeToggleButton) {
+      ui.themeToggleButton.setAttribute("aria-label", nextLabel);
+      ui.themeToggleButton.title = nextLabel;
+    }
   }
 
   function isValidEmail(value) {
@@ -1733,9 +1741,7 @@
     if (rooms.length === 0) {
       ui.roomList.innerHTML = `
         <li class="state-card p-6 text-left">
-          <p class="state-description">
-            아직 세션이 없습니다. 새 오답 세션 버튼을 누르면 학습 기록이 자동으로 시작됩니다.
-          </p>
+          <p class="state-description">세션이 없습니다.</p>
         </li>
       `;
       return;
@@ -1833,10 +1839,8 @@
           <span class="state-icon">
             <i class="fa-solid fa-brain text-xl"></i>
           </span>
-          <h3 class="state-title">대화를 시작할 준비가 됐습니다</h3>
-          <p class="state-description">
-            왼쪽에서 세션을 선택하거나 새로 만든 뒤, 중앙 입력창에 막힌 문제나 개념 질문을 적어 보세요.
-          </p>
+          <h3 class="state-title">새 대화</h3>
+          <p class="state-description">세션을 선택하거나 만드세요.</p>
         </div>
       `;
       return;
@@ -2246,22 +2250,18 @@
 
   function updateModeChip() {
     ui.modeChipLabel.textContent =
-      ui.modeSelect.value === "solve" ? "풀이 모드" : "힌트 모드";
+      ui.modeSelect.value === "solve" ? "풀이" : "힌트";
   }
 
   function updateSelectedRoomChip() {
     const room = state.rooms.find((item) => item.id === state.currentRoomId);
-    ui.selectedRoomChip.textContent = room
-      ? `현재 세션: ${room.title}`
-      : "세션을 선택하거나 새로 만드세요";
+    ui.selectedRoomChip.textContent = room ? room.title : "새 세션";
   }
 
   function updateSelectedConceptChip() {
     const conceptName = findConceptName(state.currentConceptId);
 
-    ui.selectedConceptChip.textContent = conceptName
-      ? `현재 개념: ${conceptName}`
-      : "개념을 선택하면 추천 흐름이 더 정확해집니다";
+    ui.selectedConceptChip.textContent = conceptName || "개념 미선택";
 
     if (!conceptName) {
       ui.conceptPanelTitle.textContent = state.concepts.length

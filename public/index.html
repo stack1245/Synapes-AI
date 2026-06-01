@@ -245,12 +245,7 @@
         <div class="settings-modal">
           <div class="settings-modal-header">
             <div>
-              <p class="panel-kicker">Settings</p>
               <h2 id="settings-title" class="settings-title">내 설정</h2>
-              <p class="settings-subtitle">
-                닉네임과 비밀번호를 관리하고, 모든 대화 기록을 초기화하거나
-                계정을 탈퇴할 수 있습니다.
-              </p>
             </div>
 
             <button
@@ -356,11 +351,7 @@
               class="flex items-center justify-between gap-3 border-b border-[var(--panel-border)] px-5 py-5"
             >
               <div>
-                <p class="panel-kicker">Synapes AI</p>
-                <h1 class="panel-title mt-2">오답 세션</h1>
-                <p class="panel-subtitle mt-2">
-                  헷갈린 문제를 차근차근 정리하는 개인 학습 공간
-                </p>
+                <h1 class="panel-title">오답 세션</h1>
               </div>
               <button
                 id="close-sidebar-button"
@@ -439,12 +430,7 @@
                   </button>
 
                   <div>
-                    <p class="panel-kicker">Smart Study Flow</p>
-                    <h2 class="panel-title mt-2">시냅스 AI 수학 오답 노트</h2>
-                    <p class="panel-subtitle mt-2">
-                      노션처럼 정돈된 기록감과 아이패드 앱 같은 넓은 여백 위에,
-                      학생 친화적인 튜터 경험을 얹었습니다.
-                    </p>
+                    <h2 class="panel-title">시냅스 AI</h2>
                   </div>
                 </div>
 
@@ -456,7 +442,6 @@
                     aria-label="앱 설치"
                   >
                     <i class="fa-solid fa-download"></i>
-                    <span class="hidden sm:inline">앱 설치</span>
                   </button>
 
                   <button
@@ -466,9 +451,6 @@
                     aria-label="테마 변경"
                   >
                     <i id="theme-toggle-icon" class="fa-solid fa-moon"></i>
-                    <span id="theme-toggle-label" class="hidden sm:inline"
-                      >다크 모드</span
-                    >
                   </button>
 
                   <label class="sr-only" for="mode-select">튜터링 모드</label>
@@ -489,9 +471,9 @@
                     id="open-concept-button"
                     class="toolbar-button xl:hidden"
                     type="button"
+                    aria-label="개념 트리"
                   >
                     <i class="fa-solid fa-diagram-project"></i>
-                    <span class="hidden sm:inline">개념 트리</span>
                   </button>
                 </div>
               </div>
@@ -499,19 +481,19 @@
               <div class="mt-4 flex flex-wrap items-center gap-2">
                 <span class="status-chip status-chip-accent">
                   <i class="fa-solid fa-sparkles"></i>
-                  <span id="mode-chip-label">힌트 모드</span>
+                  <span id="mode-chip-label">힌트</span>
                 </span>
                 <span
                   id="selected-room-chip"
                   class="status-chip status-chip-neutral"
                 >
-                  세션을 선택하거나 새로 만드세요
+                  새 세션
                 </span>
                 <span
                   id="selected-concept-chip"
                   class="status-chip status-chip-soft"
                 >
-                  개념을 선택하면 추천 흐름이 더 정확해집니다
+                  개념 미선택
                 </span>
               </div>
             </header>
@@ -602,11 +584,7 @@
               class="flex items-center justify-between gap-3 border-b border-[var(--panel-border)] px-5 py-5"
             >
               <div>
-                <p class="panel-kicker">Knowledge Tree</p>
-                <h2 class="panel-title mt-2">개념 트리</h2>
-                <p class="panel-subtitle mt-2">
-                  현재 개념과 다음 추천 개념의 위치를 시각적으로 확인합니다.
-                </p>
+                <h2 class="panel-title">개념 트리</h2>
               </div>
               <button
                 id="close-concept-button"
