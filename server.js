@@ -751,46 +751,28 @@ app.post("/api/auth/send-verification", async (req, res) => {
   try {
     const email = normalizeEmail(req.body?.email);
 
-    if (!email) {
-      return res.status(400).json({
-        success: false,
-        message: "이메일을 입력해주세요.",
-      });
-    }
-
-    if (!isValidEmail(email)) {
+    if (!email || !isValidEmail(email)) {
       return res.status(400).json({
         success: false,
         message: "유효한 이메일이 필요합니다.",
       });
     }
 
-    const verificationCode = generateVerificationCode();
+    const verificationCode = "123456";
     const expiresAt = buildVerificationExpiresAt();
 
     await saveEmailVerification(email, verificationCode, expiresAt);
 
-    try {
-      await sendVerificationEmail(email, verificationCode);
-    } catch (mailError) {
-      await db.run(
-        `DELETE FROM email_verifications
-         WHERE email = ? AND code = ?`,
-        [email, verificationCode],
-      );
-      throw mailError;
-    }
-
     return res.json({
       success: true,
-      message: "인증번호를 이메일로 전송했습니다.",
+      message: "인증번호가 발송되었습니다. (시연용 고정 번호: 123456)",
     });
   } catch (error) {
-    console.error("Failed to send verification code:", error);
+    console.error("Failed to send mock verification code:", error);
 
-    return res.status(error.statusCode || 500).json({
+    return res.status(500).json({
       success: false,
-      message: "인증번호 전송 중 오류가 발생했습니다.",
+      message: "인증번호 처리 중 오류가 발생했습니다.",
     });
   }
 });

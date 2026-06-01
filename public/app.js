@@ -885,18 +885,16 @@
   }
 
   async function handleSendVerification() {
-    if (state.authMode !== "signup" || !ui.authEmailInput) {
-      return;
-    }
+    if (state.authMode !== "signup" || !ui.authEmailInput) return;
 
     const email = ui.authEmailInput.value.trim().toLowerCase();
-
     if (!isValidEmail(email)) {
       showToast("유효한 이메일을 입력해 주세요.");
       ui.authEmailInput.focus();
       return;
     }
 
+    // 요청 시작 시 버튼 비활성화
     ui.authSendVerificationButton.disabled = true;
 
     try {
@@ -915,13 +913,13 @@
       }
 
       startVerificationTimer(180);
-      showToast("인증번호를 전송했습니다. 이메일을 확인해 주세요.", "success");
+      showToast("인증번호가 발송되었습니다. (테스트 번호: 123456)", "success");
     } catch (error) {
       console.error(error);
       state.verificationStatus = "idle";
-      updateVerificationUi();
       showToast(error.message || "인증번호 전송에 실패했습니다.");
     } finally {
+      // 에러가 나거나 성공하더라도 이메일 인증이 완료되지 않았다면 버튼 락을 확실히 해제
       if (!state.isEmailVerified) {
         ui.authSendVerificationButton.disabled = false;
       }
