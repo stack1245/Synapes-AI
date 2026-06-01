@@ -1343,4 +1343,44 @@ input,
     min-height: auto !important;
     overflow-y: visible !important;
   }
+
+  .header-panel {
+    padding: 1rem 1.2rem !important;
+  }
+
+  .header-panel > div.flex.items-start.justify-between {
+    flex-direction: column !important;
+    align-items: stretch !important;
+    gap: 1rem !important;
+  }
+
+  .header-panel > div.flex > div.flex.items-center {
+    flex-wrap: wrap !important;
+    justify-content: flex-start !important;
+    width: 100% !important;
+  }
+
+  .header-panel .panel-subtitle {
+    display: none !important;
+  }
+
+  .header-panel .panel-title {
+    margin-top: 0.2rem !important;
+    font-size: 1.25rem !important;
+  }
+
+  .message-card {
+    max-width: 100% !important;
+    padding: 0.85rem 1rem !important;
+  }
+
+  .message-body {
+    font-size: 0.95rem !important;
+    line-height: 1.6 !important;
+  }
+
+  .status-chip {
+    padding: 0.35rem 0.6rem !important;
+    font-size: 0.7rem !important;
+  }
 }
