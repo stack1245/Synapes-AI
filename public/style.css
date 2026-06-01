@@ -1,3 +1,4 @@
+/* --- [Variables] --- */
 :root {
   color-scheme: light;
   --page-bg: #f6f3ed;
@@ -116,6 +117,7 @@ html.dark {
   --auth-note-border: rgba(255, 255, 255, 0.12);
 }
 
+/* --- [Reset & Base] --- */
 * {
   box-sizing: border-box;
 }
@@ -155,6 +157,7 @@ input,
     transform 180ms ease;
 }
 
+/* --- [Layout] --- */
 .app-root {
   height: 100dvh;
   display: flex;
@@ -181,10 +184,11 @@ input,
   user-select: none;
 }
 
-.auth-overlay {
+/* --- [Components: Auth] --- */
+.auth-overlay,
+.settings-overlay {
   position: fixed;
   inset: 0;
-  z-index: 80;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -196,7 +200,12 @@ input,
   transition: opacity 220ms ease;
 }
 
-.auth-overlay.is-visible {
+.auth-overlay {
+  z-index: 80;
+}
+
+.auth-overlay.is-visible,
+.settings-overlay.is-visible {
   opacity: 1;
   pointer-events: auto;
 }
@@ -453,24 +462,9 @@ input,
   font-weight: 700;
 }
 
+/* --- [Components: Settings] --- */
 .settings-overlay {
-  position: fixed;
-  inset: 0;
   z-index: 82;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 1.2rem;
-  background: var(--auth-backdrop);
-  backdrop-filter: blur(24px);
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 220ms ease;
-}
-
-.settings-overlay.is-visible {
-  opacity: 1;
-  pointer-events: auto;
 }
 
 .settings-modal {
@@ -545,6 +539,7 @@ input,
   opacity: 0.82;
 }
 
+/* --- [Components: Shell & Drawers] --- */
 .sidebar-user-label {
   color: var(--text-secondary);
   font-size: 0.84rem;
@@ -606,6 +601,7 @@ input,
   pointer-events: auto;
 }
 
+/* --- [Components: Shared Controls] --- */
 .panel-kicker,
 .section-label {
   color: var(--accent-strong);
@@ -672,8 +668,6 @@ input,
 .mode-select {
   min-width: 8.6rem;
   justify-content: flex-start;
-  background: var(--panel-bg);
-  color: var(--text-primary);
 }
 
 .primary-action-button {
@@ -694,9 +688,9 @@ input,
 .secondary-action-button {
   width: 100%;
   justify-content: flex-start;
-  background: var(--panel-bg);
 }
 
+/* --- [Components: Room List] --- */
 .room-count-badge {
   display: inline-flex;
   min-width: 1.8rem;
@@ -868,6 +862,7 @@ input,
   background: rgba(239, 111, 108, 0.1);
 }
 
+/* --- [Components: Chat] --- */
 .chat-scroll::-webkit-scrollbar {
   width: 10px;
   height: 10px;
@@ -1021,6 +1016,7 @@ input,
   line-height: 1.85;
 }
 
+/* --- [Components: Feedback] --- */
 .state-card {
   margin: 0 auto;
   display: flex;
@@ -1091,20 +1087,6 @@ input,
   animation-delay: 0.24s;
 }
 
-.concept-canvas {
-  border: 1px solid var(--panel-border);
-  background: var(--panel-soft);
-}
-
-.toast-card {
-  border: 1px solid var(--panel-border);
-  border-radius: 1.2rem;
-  background: var(--toast-bg);
-  color: var(--toast-text);
-  box-shadow: var(--surface-shadow);
-  z-index: 95;
-}
-
 @keyframes bounce {
   0%,
   80%,
@@ -1118,6 +1100,23 @@ input,
   }
 }
 
+/* --- [Components: Toast] --- */
+.toast-card {
+  border: 1px solid var(--panel-border);
+  border-radius: 1.2rem;
+  background: var(--toast-bg);
+  color: var(--toast-text);
+  box-shadow: var(--surface-shadow);
+  z-index: 95;
+}
+
+/* --- [Cytoscape Styles] --- */
+.concept-canvas {
+  border: 1px solid var(--panel-border);
+  background: var(--panel-soft);
+}
+
+/* --- [Media Queries] --- */
 @media (max-width: 1023px) {
   .auth-modal {
     grid-template-columns: 1fr;

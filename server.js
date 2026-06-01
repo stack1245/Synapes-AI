@@ -11,6 +11,10 @@ const path = require("path");
 const sqlite3 = require("sqlite3");
 const { open } = require("sqlite");
 
+// -----------------------------------------------------------------------------
+// Application configuration and middleware
+// -----------------------------------------------------------------------------
+
 const app = express();
 const PORT = Number(process.env.PORT) || 3000;
 const DB_PATH = path.join(__dirname, "database.db");
@@ -40,6 +44,46 @@ const tutorModePrompts = {
 app.use(express.json({ limit: "10mb" }));
 app.use(cookieParser());
 app.use(express.static(PUBLIC_DIR));
+
+// -----------------------------------------------------------------------------
+// Shared response and error helpers
+// -----------------------------------------------------------------------------
+
+function createHttpError(statusCode, message) {
+  const error = new Error(message);
+  error.statusCode = statusCode;
+  return error;
+}
+
+function sendDataResponse(res, data, statusCode = 200) {
+  return res.status(statusCode).json({
+    success: true,
+    data,
+  });
+}
+
+function sendMessageResponse(res, message, statusCode = 200) {
+  return res.status(statusCode).json({
+    success: true,
+    message,
+  });
+}
+
+function sendErrorResponse(res, statusCode, message) {
+  return res.status(statusCode).json({
+    success: false,
+    message,
+  });
+}
+
+function handleRouteError(res, error, logMessage, fallbackMessage) {
+  console.error(logMessage, error);
+  return sendErrorResponse(res, error.statusCode || 500, fallbackMessage);
+}
+
+// -----------------------------------------------------------------------------
+// Input normalization and validation helpers
+// -----------------------------------------------------------------------------
 
 function normalizeRoomTitle(title) {
   if (typeof title !== "string") {
@@ -91,11 +135,13 @@ function isValidVerificationCode(code) {
   return /^\d{6}$/.test(code);
 }
 
+// -----------------------------------------------------------------------------
+// Authentication and environment helpers
+// -----------------------------------------------------------------------------
+
 function getJwtSecret() {
   if (!process.env.JWT_SECRET) {
-    const error = new Error("JWT_SECRET이 설정되지 않았습니다.");
-    error.statusCode = 500;
-    throw error;
+    throw createHttpError(500, "JWT_SECRET이 설정되지 않았습니다.");
   }
 
   return process.env.JWT_SECRET;
@@ -112,9 +158,10 @@ function getEmailCredentials() {
       : "";
 
   if (!emailUser || !emailPass) {
-    const error = new Error("EMAIL_USER와 EMAIL_PASS가 설정되지 않았습니다.");
-    error.statusCode = 500;
-    throw error;
+    throw createHttpError(
+      500,
+      "EMAIL_USER와 EMAIL_PASS가 설정되지 않았습니다.",
+    );
   }
 
   return {
@@ -123,12 +170,31 @@ function getEmailCredentials() {
   };
 }
 
-function getAuthCookieOptions() {
+function getGeminiApiKey() {
+  const geminiApiKey =
+    typeof process.env.GEMINI_API_KEY === "string"
+      ? process.env.GEMINI_API_KEY.trim()
+      : "";
+
+  if (!geminiApiKey) {
+    throw createHttpError(500, "GEMINI_API_KEY가 설정되지 않았습니다.");
+  }
+
+  return geminiApiKey;
+}
+
+function getBaseAuthCookieOptions() {
   return {
     httpOnly: true,
     sameSite: "lax",
     secure: process.env.NODE_ENV === "production",
     path: "/",
+  };
+}
+
+function getAuthCookieOptions() {
+  return {
+    ...getBaseAuthCookieOptions(),
     maxAge: JWT_COOKIE_MAX_AGE,
   };
 }
@@ -166,12 +232,7 @@ function setAuthCookie(res, user) {
 }
 
 function clearAuthCookie(res) {
-  res.clearCookie(JWT_COOKIE_NAME, {
-    httpOnly: true,
-    sameSite: "lax",
-    secure: process.env.NODE_ENV === "production",
-    path: "/",
-  });
+  res.clearCookie(JWT_COOKIE_NAME, getBaseAuthCookieOptions());
 }
 
 function getEmailTransporter() {
@@ -196,10 +257,6 @@ function getEmailTransporter() {
   return emailTransporter;
 }
 
-function generateVerificationCode() {
-  return String(Math.floor(Math.random() * 1000000)).padStart(6, "0");
-}
-
 function buildVerificationExpiresAt() {
   return new Date(
     Date.now() + EMAIL_VERIFICATION_EXPIRES_MINUTES * 60 * 1000,
@@ -222,6 +279,10 @@ function isImageDataUrl(value) {
     /^data:image\/[a-zA-Z0-9.+-]+;base64,/.test(value.trim())
   );
 }
+
+// -----------------------------------------------------------------------------
+// AI prompt and response assembly helpers
+// -----------------------------------------------------------------------------
 
 function buildStoredUserMessage(message, hasImageAttachment) {
   if (message && hasImageAttachment) {
@@ -543,6 +604,10 @@ function resolveConceptId(candidateConceptId, currentConceptId, concepts) {
   return getFallbackConceptId(currentConceptId, concepts);
 }
 
+// -----------------------------------------------------------------------------
+// Data access helpers
+// -----------------------------------------------------------------------------
+
 async function saveChatMessage(roomId, senderRole, content, conceptNodeId) {
   return db.run(
     `INSERT INTO chat_messages (room_id, sender_role, content, concept_node_id)
@@ -649,6 +714,24 @@ async function getRoomByIdForUser(roomId, userId) {
   );
 }
 
+async function requireOwnedRoom(res, roomIdValue, userId) {
+  const roomId = parseOptionalInteger(roomIdValue);
+
+  if (roomId === null) {
+    sendErrorResponse(res, 400, "유효한 roomId가 필요합니다.");
+    return null;
+  }
+
+  const room = await getRoomByIdForUser(roomId, userId);
+
+  if (!room) {
+    sendErrorResponse(res, 404, "존재하지 않는 채팅방입니다.");
+    return null;
+  }
+
+  return { roomId, room };
+}
+
 async function ensureChatRoomsPinnedColumn() {
   const columns = await db.all(`PRAGMA table_info(chat_rooms)`);
   const hasPinnedColumn = columns.some((column) => column.name === "is_pinned");
@@ -661,14 +744,15 @@ async function ensureChatRoomsPinnedColumn() {
   }
 }
 
+// -----------------------------------------------------------------------------
+// Authentication middleware and database bootstrap
+// -----------------------------------------------------------------------------
+
 async function authenticateToken(req, res, next) {
   const token = req.cookies?.[JWT_COOKIE_NAME];
 
   if (!token) {
-    return res.status(401).json({
-      success: false,
-      message: "로그인이 필요합니다.",
-    });
+    return sendErrorResponse(res, 401, "로그인이 필요합니다.");
   }
 
   try {
@@ -677,30 +761,25 @@ async function authenticateToken(req, res, next) {
 
     if (userId === null) {
       clearAuthCookie(res);
-      return res.status(401).json({
-        success: false,
-        message: "유효하지 않은 인증 정보입니다.",
-      });
+      return sendErrorResponse(res, 401, "유효하지 않은 인증 정보입니다.");
     }
 
     const user = await getPublicUserById(userId);
 
     if (!user) {
       clearAuthCookie(res);
-      return res.status(401).json({
-        success: false,
-        message: "존재하지 않는 사용자입니다.",
-      });
+      return sendErrorResponse(res, 401, "존재하지 않는 사용자입니다.");
     }
 
     req.user = user;
     return next();
   } catch (error) {
     clearAuthCookie(res);
-    return res.status(401).json({
-      success: false,
-      message: "인증이 만료되었거나 유효하지 않습니다.",
-    });
+    return sendErrorResponse(
+      res,
+      401,
+      "인증이 만료되었거나 유효하지 않습니다.",
+    );
   }
 }
 
@@ -726,6 +805,10 @@ async function initializeDatabase() {
   `);
 }
 
+// -----------------------------------------------------------------------------
+// Route handlers
+// -----------------------------------------------------------------------------
+
 app.get("/api/concepts", async (req, res) => {
   try {
     const concepts = await db.all(
@@ -734,18 +817,18 @@ app.get("/api/concepts", async (req, res) => {
        ORDER BY id ASC`,
     );
 
-    res.json({
-      success: true,
-      data: concepts,
-    });
+    return sendDataResponse(res, concepts);
   } catch (error) {
-    console.error("Failed to fetch concepts:", error);
-    res.status(500).json({
-      success: false,
-      message: "개념 노드 조회 중 오류가 발생했습니다.",
-    });
+    return handleRouteError(
+      res,
+      error,
+      "Failed to fetch concepts:",
+      "개념 노드 조회 중 오류가 발생했습니다.",
+    );
   }
 });
+
+// Demo-safe email verification flow. Keep the mocked 123456 flow unchanged.
 
 app.post("/api/auth/send-verification", async (req, res) => {
   try {
@@ -830,6 +913,8 @@ app.post("/api/auth/verify-code", async (req, res) => {
   }
 });
 
+// Authentication routes
+
 app.post("/api/auth/signup", async (req, res) => {
   try {
     const email = normalizeEmail(req.body?.email);
@@ -863,24 +948,18 @@ app.post("/api/auth/signup", async (req, res) => {
     );
     const user = await getPublicUserById(result.lastID);
 
-    return res.status(201).json({
-      success: true,
-      data: user,
-    });
+    return sendDataResponse(res, user, 201);
   } catch (error) {
-    console.error("Failed to sign up user:", error);
-
     if (error.code === "SQLITE_CONSTRAINT") {
-      return res.status(409).json({
-        success: false,
-        message: "이미 사용 중인 이메일입니다.",
-      });
+      return sendErrorResponse(res, 409, "이미 사용 중인 이메일입니다.");
     }
 
-    return res.status(500).json({
-      success: false,
-      message: "회원가입 중 오류가 발생했습니다.",
-    });
+    return handleRouteError(
+      res,
+      error,
+      "Failed to sign up user:",
+      "회원가입 중 오류가 발생했습니다.",
+    );
   }
 });
 
@@ -891,60 +970,54 @@ app.post("/api/auth/login", async (req, res) => {
       typeof req.body?.password === "string" ? req.body.password : "";
 
     if (!isValidEmail(email) || !password) {
-      return res.status(400).json({
-        success: false,
-        message: "유효한 이메일과 비밀번호가 필요합니다.",
-      });
+      return sendErrorResponse(
+        res,
+        400,
+        "유효한 이메일과 비밀번호가 필요합니다.",
+      );
     }
 
     const user = await getUserByEmail(email);
 
     if (!user) {
-      return res.status(401).json({
-        success: false,
-        message: "이메일 또는 비밀번호가 올바르지 않습니다.",
-      });
+      return sendErrorResponse(
+        res,
+        401,
+        "이메일 또는 비밀번호가 올바르지 않습니다.",
+      );
     }
 
     const isPasswordValid = await bcrypt.compare(password, user.password_hash);
 
     if (!isPasswordValid) {
-      return res.status(401).json({
-        success: false,
-        message: "이메일 또는 비밀번호가 올바르지 않습니다.",
-      });
+      return sendErrorResponse(
+        res,
+        401,
+        "이메일 또는 비밀번호가 올바르지 않습니다.",
+      );
     }
 
     setAuthCookie(res, user);
 
-    return res.json({
-      success: true,
-      data: toPublicUser(user),
-    });
+    return sendDataResponse(res, toPublicUser(user));
   } catch (error) {
-    console.error("Failed to log in user:", error);
-
-    return res.status(error.statusCode || 500).json({
-      success: false,
-      message: "로그인 중 오류가 발생했습니다.",
-    });
+    return handleRouteError(
+      res,
+      error,
+      "Failed to log in user:",
+      "로그인 중 오류가 발생했습니다.",
+    );
   }
 });
 
 app.post("/api/auth/logout", (req, res) => {
   clearAuthCookie(res);
 
-  return res.json({
-    success: true,
-    message: "로그아웃되었습니다.",
-  });
+  return sendMessageResponse(res, "로그아웃되었습니다.");
 });
 
 app.get("/api/auth/me", authenticateToken, (req, res) => {
-  return res.json({
-    success: true,
-    data: req.user,
-  });
+  return sendDataResponse(res, req.user);
 });
 
 app.put("/api/auth/me", authenticateToken, async (req, res) => {
@@ -968,32 +1041,20 @@ app.put("/api/auth/me", authenticateToken, async (req, res) => {
 
     if (!user) {
       clearAuthCookie(res);
-      return res.status(404).json({
-        success: false,
-        message: "존재하지 않는 사용자입니다.",
-      });
+      return sendErrorResponse(res, 404, "존재하지 않는 사용자입니다.");
     }
 
     if (nicknameProvided && !nickname) {
-      return res.status(400).json({
-        success: false,
-        message: "닉네임은 비워 둘 수 없습니다.",
-      });
+      return sendErrorResponse(res, 400, "닉네임은 비워 둘 수 없습니다.");
     }
 
     if (!newPassword && (currentPassword || newPasswordConfirm)) {
-      return res.status(400).json({
-        success: false,
-        message: "새 비밀번호를 함께 입력해 주세요.",
-      });
+      return sendErrorResponse(res, 400, "새 비밀번호를 함께 입력해 주세요.");
     }
 
     if (shouldUpdatePassword) {
       if (!currentPassword) {
-        return res.status(400).json({
-          success: false,
-          message: "현재 비밀번호를 입력해 주세요.",
-        });
+        return sendErrorResponse(res, 400, "현재 비밀번호를 입력해 주세요.");
       }
 
       const isCurrentPasswordValid = await bcrypt.compare(
@@ -1002,17 +1063,19 @@ app.put("/api/auth/me", authenticateToken, async (req, res) => {
       );
 
       if (!isCurrentPasswordValid) {
-        return res.status(400).json({
-          success: false,
-          message: "현재 비밀번호가 올바르지 않습니다.",
-        });
+        return sendErrorResponse(
+          res,
+          400,
+          "현재 비밀번호가 올바르지 않습니다.",
+        );
       }
 
       if (newPassword !== newPasswordConfirm) {
-        return res.status(400).json({
-          success: false,
-          message: "새 비밀번호와 비밀번호 확인이 일치하지 않습니다.",
-        });
+        return sendErrorResponse(
+          res,
+          400,
+          "새 비밀번호와 비밀번호 확인이 일치하지 않습니다.",
+        );
       }
 
       const nextPasswordHash = await bcrypt.hash(
@@ -1040,17 +1103,14 @@ app.put("/api/auth/me", authenticateToken, async (req, res) => {
     const updatedUser = await getPublicUserById(req.user.id);
     setAuthCookie(res, updatedUser);
 
-    return res.json({
-      success: true,
-      data: updatedUser,
-    });
+    return sendDataResponse(res, updatedUser);
   } catch (error) {
-    console.error("Failed to update current user:", error);
-
-    return res.status(error.statusCode || 500).json({
-      success: false,
-      message: "내 정보 수정 중 오류가 발생했습니다.",
-    });
+    return handleRouteError(
+      res,
+      error,
+      "Failed to update current user:",
+      "내 정보 수정 중 오류가 발생했습니다.",
+    );
   }
 });
 
@@ -1070,27 +1130,23 @@ app.delete("/api/auth/me", authenticateToken, async (req, res) => {
 
     if (!result.changes) {
       clearAuthCookie(res);
-      return res.status(404).json({
-        success: false,
-        message: "존재하지 않는 사용자입니다.",
-      });
+      return sendErrorResponse(res, 404, "존재하지 않는 사용자입니다.");
     }
 
     clearAuthCookie(res);
 
-    return res.json({
-      success: true,
-      message: "회원 탈퇴가 완료되었습니다.",
-    });
+    return sendMessageResponse(res, "회원 탈퇴가 완료되었습니다.");
   } catch (error) {
-    console.error("Failed to delete current user:", error);
-
-    return res.status(error.statusCode || 500).json({
-      success: false,
-      message: "회원 탈퇴 중 오류가 발생했습니다.",
-    });
+    return handleRouteError(
+      res,
+      error,
+      "Failed to delete current user:",
+      "회원 탈퇴 중 오류가 발생했습니다.",
+    );
   }
 });
+
+// Chat routes
 
 app.post("/api/chat/rooms", authenticateToken, async (req, res) => {
   try {
@@ -1102,39 +1158,30 @@ app.post("/api/chat/rooms", authenticateToken, async (req, res) => {
     );
     const room = await getRoomByIdForUser(result.lastID, req.user.id);
 
-    return res.status(201).json({
-      success: true,
-      data: room,
-    });
+    return sendDataResponse(res, room, 201);
   } catch (error) {
-    console.error("Failed to create chat room:", error);
-
-    return res.status(500).json({
-      success: false,
-      message: "채팅방 생성 중 오류가 발생했습니다.",
-    });
+    return handleRouteError(
+      res,
+      error,
+      "Failed to create chat room:",
+      "채팅방 생성 중 오류가 발생했습니다.",
+    );
   }
 });
 
 app.patch("/api/chat/rooms/:roomId", authenticateToken, async (req, res) => {
   try {
-    const parsedRoomId = parseOptionalInteger(req.params.roomId);
+    const roomContext = await requireOwnedRoom(
+      res,
+      req.params.roomId,
+      req.user.id,
+    );
 
-    if (parsedRoomId === null) {
-      return res.status(400).json({
-        success: false,
-        message: "유효한 roomId가 필요합니다.",
-      });
+    if (!roomContext) {
+      return;
     }
 
-    const room = await getRoomByIdForUser(parsedRoomId, req.user.id);
-
-    if (!room) {
-      return res.status(404).json({
-        success: false,
-        message: "존재하지 않는 채팅방입니다.",
-      });
-    }
+    const { roomId } = roomContext;
 
     const title = normalizeRoomTitle(req.body?.title);
 
@@ -1142,22 +1189,19 @@ app.patch("/api/chat/rooms/:roomId", authenticateToken, async (req, res) => {
       `UPDATE chat_rooms
        SET title = ?, updated_at = CURRENT_TIMESTAMP
        WHERE id = ? AND user_id = ?`,
-      [title, parsedRoomId, req.user.id],
+      [title, roomId, req.user.id],
     );
 
-    const updatedRoom = await getRoomByIdForUser(parsedRoomId, req.user.id);
+    const updatedRoom = await getRoomByIdForUser(roomId, req.user.id);
 
-    return res.json({
-      success: true,
-      data: updatedRoom,
-    });
+    return sendDataResponse(res, updatedRoom);
   } catch (error) {
-    console.error("Failed to rename chat room:", error);
-
-    return res.status(500).json({
-      success: false,
-      message: "채팅방 이름 변경 중 오류가 발생했습니다.",
-    });
+    return handleRouteError(
+      res,
+      error,
+      "Failed to rename chat room:",
+      "채팅방 이름 변경 중 오류가 발생했습니다.",
+    );
   }
 });
 
@@ -1166,23 +1210,17 @@ app.patch(
   authenticateToken,
   async (req, res) => {
     try {
-      const parsedRoomId = parseOptionalInteger(req.params.roomId);
+      const roomContext = await requireOwnedRoom(
+        res,
+        req.params.roomId,
+        req.user.id,
+      );
 
-      if (parsedRoomId === null) {
-        return res.status(400).json({
-          success: false,
-          message: "유효한 roomId가 필요합니다.",
-        });
+      if (!roomContext) {
+        return;
       }
 
-      const room = await getRoomByIdForUser(parsedRoomId, req.user.id);
-
-      if (!room) {
-        return res.status(404).json({
-          success: false,
-          message: "존재하지 않는 채팅방입니다.",
-        });
-      }
+      const { roomId, room } = roomContext;
 
       const nextPinnedValue = Number(room.is_pinned) === 1 ? 0 : 1;
 
@@ -1190,63 +1228,51 @@ app.patch(
         `UPDATE chat_rooms
          SET is_pinned = ?, updated_at = CURRENT_TIMESTAMP
          WHERE id = ? AND user_id = ?`,
-        [nextPinnedValue, parsedRoomId, req.user.id],
+        [nextPinnedValue, roomId, req.user.id],
       );
 
-      const updatedRoom = await getRoomByIdForUser(parsedRoomId, req.user.id);
+      const updatedRoom = await getRoomByIdForUser(roomId, req.user.id);
 
-      return res.json({
-        success: true,
-        data: updatedRoom,
-      });
+      return sendDataResponse(res, updatedRoom);
     } catch (error) {
-      console.error("Failed to toggle chat room pin:", error);
-
-      return res.status(500).json({
-        success: false,
-        message: "채팅방 고정 상태 변경 중 오류가 발생했습니다.",
-      });
+      return handleRouteError(
+        res,
+        error,
+        "Failed to toggle chat room pin:",
+        "채팅방 고정 상태 변경 중 오류가 발생했습니다.",
+      );
     }
   },
 );
 
 app.delete("/api/chat/rooms/:roomId", authenticateToken, async (req, res) => {
   try {
-    const parsedRoomId = parseOptionalInteger(req.params.roomId);
+    const roomContext = await requireOwnedRoom(
+      res,
+      req.params.roomId,
+      req.user.id,
+    );
 
-    if (parsedRoomId === null) {
-      return res.status(400).json({
-        success: false,
-        message: "유효한 roomId가 필요합니다.",
-      });
+    if (!roomContext) {
+      return;
     }
 
-    const room = await getRoomByIdForUser(parsedRoomId, req.user.id);
-
-    if (!room) {
-      return res.status(404).json({
-        success: false,
-        message: "존재하지 않는 채팅방입니다.",
-      });
-    }
+    const { roomId } = roomContext;
 
     await db.run(
       `DELETE FROM chat_rooms
          WHERE id = ? AND user_id = ?`,
-      [parsedRoomId, req.user.id],
+      [roomId, req.user.id],
     );
 
-    return res.json({
-      success: true,
-      message: "채팅방이 삭제되었습니다.",
-    });
+    return sendMessageResponse(res, "채팅방이 삭제되었습니다.");
   } catch (error) {
-    console.error("Failed to delete chat room:", error);
-
-    return res.status(500).json({
-      success: false,
-      message: "채팅방 삭제 중 오류가 발생했습니다.",
-    });
+    return handleRouteError(
+      res,
+      error,
+      "Failed to delete chat room:",
+      "채팅방 삭제 중 오류가 발생했습니다.",
+    );
   }
 });
 
@@ -1258,17 +1284,14 @@ app.delete("/api/chat/rooms", authenticateToken, async (req, res) => {
       [req.user.id],
     );
 
-    return res.json({
-      success: true,
-      message: "모든 채팅 세션이 초기화되었습니다.",
-    });
+    return sendMessageResponse(res, "모든 채팅 세션이 초기화되었습니다.");
   } catch (error) {
-    console.error("Failed to delete all chat rooms:", error);
-
-    return res.status(500).json({
-      success: false,
-      message: "채팅 세션 초기화 중 오류가 발생했습니다.",
-    });
+    return handleRouteError(
+      res,
+      error,
+      "Failed to delete all chat rooms:",
+      "채팅 세션 초기화 중 오류가 발생했습니다.",
+    );
   }
 });
 
@@ -1282,17 +1305,14 @@ app.get("/api/chat/rooms", authenticateToken, async (req, res) => {
       [req.user.id],
     );
 
-    return res.json({
-      success: true,
-      data: rooms,
-    });
+    return sendDataResponse(res, rooms);
   } catch (error) {
-    console.error("Failed to fetch chat rooms:", error);
-
-    return res.status(500).json({
-      success: false,
-      message: "채팅방 목록 조회 중 오류가 발생했습니다.",
-    });
+    return handleRouteError(
+      res,
+      error,
+      "Failed to fetch chat rooms:",
+      "채팅방 목록 조회 중 오류가 발생했습니다.",
+    );
   }
 });
 
@@ -1301,96 +1321,84 @@ app.get(
   authenticateToken,
   async (req, res) => {
     try {
-      const parsedRoomId = parseOptionalInteger(req.params.roomId);
+      const roomContext = await requireOwnedRoom(
+        res,
+        req.params.roomId,
+        req.user.id,
+      );
 
-      if (parsedRoomId === null) {
-        return res.status(400).json({
-          success: false,
-          message: "유효한 roomId가 필요합니다.",
-        });
+      if (!roomContext) {
+        return;
       }
 
-      const room = await getRoomByIdForUser(parsedRoomId, req.user.id);
-
-      if (!room) {
-        return res.status(404).json({
-          success: false,
-          message: "존재하지 않는 채팅방입니다.",
-        });
-      }
+      const { roomId } = roomContext;
 
       const messages = await db.all(
         `SELECT id, room_id, sender_role, content, concept_node_id, created_at
        FROM chat_messages
        WHERE room_id = ?
        ORDER BY datetime(created_at) ASC, id ASC`,
-        [parsedRoomId],
+        [roomId],
       );
 
-      return res.json({
-        success: true,
-        data: messages,
-      });
+      return sendDataResponse(res, messages);
     } catch (error) {
-      console.error("Failed to fetch chat room messages:", error);
-
-      return res.status(500).json({
-        success: false,
-        message: "채팅 메시지 조회 중 오류가 발생했습니다.",
-      });
+      return handleRouteError(
+        res,
+        error,
+        "Failed to fetch chat room messages:",
+        "채팅 메시지 조회 중 오류가 발생했습니다.",
+      );
     }
   },
 );
 
 app.post("/api/chat/message", authenticateToken, async (req, res) => {
   try {
-    const { roomId, message, mode, currentConceptId, imageBase64 } = req.body;
-    const parsedRoomId = parseOptionalInteger(roomId);
+    const {
+      roomId: requestedRoomId,
+      message,
+      mode,
+      currentConceptId,
+      imageBase64,
+    } = req.body;
+    const parsedRoomId = parseOptionalInteger(requestedRoomId);
     const parsedCurrentConceptId = parseOptionalInteger(currentConceptId);
     const trimmedMessage = typeof message === "string" ? message.trim() : "";
     const normalizedImageBase64 =
       typeof imageBase64 === "string" ? imageBase64.trim() : "";
     const hasImageAttachment = Boolean(normalizedImageBase64);
 
-    if (parsedRoomId === null) {
-      return res.status(400).json({
-        success: false,
-        message: "유효한 roomId가 필요합니다.",
-      });
+    const roomContext = await requireOwnedRoom(res, parsedRoomId, req.user.id);
+
+    if (!roomContext) {
+      return;
     }
 
+    const { roomId: validatedRoomId } = roomContext;
+
     if (!trimmedMessage && !hasImageAttachment) {
-      return res.status(400).json({
-        success: false,
-        message: "message 또는 imageBase64 중 하나는 필요합니다.",
-      });
+      return sendErrorResponse(
+        res,
+        400,
+        "message 또는 imageBase64 중 하나는 필요합니다.",
+      );
     }
 
     if (hasImageAttachment && !isImageDataUrl(normalizedImageBase64)) {
-      return res.status(400).json({
-        success: false,
-        message: "imageBase64는 유효한 이미지 데이터 URL이어야 합니다.",
-      });
+      return sendErrorResponse(
+        res,
+        400,
+        "imageBase64는 유효한 이미지 데이터 URL이어야 합니다.",
+      );
     }
 
     if (!["hint", "solve"].includes(mode)) {
-      return res.status(400).json({
-        success: false,
-        message: "mode는 hint 또는 solve여야 합니다.",
-      });
-    }
-
-    const room = await getRoomByIdForUser(parsedRoomId, req.user.id);
-
-    if (!room) {
-      return res.status(404).json({
-        success: false,
-        message: "존재하지 않는 채팅방입니다.",
-      });
+      return sendErrorResponse(res, 400, "mode는 hint 또는 solve여야 합니다.");
     }
 
     await saveChatMessage(
-      parsedRoomId,
+      validatedRoomId,
       "user",
       buildStoredUserMessage(trimmedMessage, hasImageAttachment),
       parsedCurrentConceptId,
@@ -1401,17 +1409,8 @@ app.post("/api/chat/message", authenticateToken, async (req, res) => {
        FROM concept_nodes
        ORDER BY id ASC`,
     );
-    const conversationMessages = await getConversationMessages(parsedRoomId);
-    const geminiApiKey =
-      typeof process.env.GEMINI_API_KEY === "string"
-        ? process.env.GEMINI_API_KEY.trim()
-        : "";
-
-    if (!geminiApiKey) {
-      const error = new Error("GEMINI_API_KEY가 설정되지 않았습니다.");
-      error.statusCode = 500;
-      throw error;
-    }
+    const conversationMessages = await getConversationMessages(validatedRoomId);
+    const geminiApiKey = getGeminiApiKey();
 
     const genAI = new GoogleGenerativeAI(geminiApiKey);
     const modelInstance = genAI.getGenerativeModel({
@@ -1448,7 +1447,7 @@ app.post("/api/chat/message", authenticateToken, async (req, res) => {
     );
 
     await saveChatMessage(
-      parsedRoomId,
+      validatedRoomId,
       "assistant",
       reply,
       recommendedConceptId,
@@ -1459,22 +1458,31 @@ app.post("/api/chat/message", authenticateToken, async (req, res) => {
       conceptId: recommendedConceptId,
     });
   } catch (error) {
-    console.error("Failed to process chat message:", error);
-
-    return res.status(error.statusCode || 500).json({
-      success: false,
-      message: "AI 오답 노트 응답 생성 중 오류가 발생했습니다.",
-    });
+    return handleRouteError(
+      res,
+      error,
+      "Failed to process chat message:",
+      "AI 오답 노트 응답 생성 중 오류가 발생했습니다.",
+    );
   }
 });
 
 app.use((err, req, res, next) => {
-  console.error("Unhandled server error:", err);
-  res.status(500).json({
-    success: false,
-    message: "서버 내부 오류가 발생했습니다.",
-  });
+  if (res.headersSent) {
+    return next(err);
+  }
+
+  return handleRouteError(
+    res,
+    err,
+    "Unhandled server error:",
+    "서버 내부 오류가 발생했습니다.",
+  );
 });
+
+// -----------------------------------------------------------------------------
+// Application lifecycle
+// -----------------------------------------------------------------------------
 
 async function startServer() {
   try {

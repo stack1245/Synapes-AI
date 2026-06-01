@@ -1,5 +1,6 @@
 (function () {
   let deferredPrompt;
+  let hasBoundEvents = false;
 
   const state = {
     rooms: [],
@@ -118,7 +119,6 @@
     ui.settingsNewPasswordConfirmInput = document.getElementById(
       "settings-new-password-confirm-input",
     );
-    ui.settingsSubmitButton = document.getElementById("settings-submit-button");
     ui.settingsResetChatsButton = document.getElementById(
       "settings-reset-chats-button",
     );
@@ -161,6 +161,18 @@
   }
 
   function bindEvents() {
+    if (hasBoundEvents) {
+      return;
+    }
+
+    hasBoundEvents = true;
+    bindWorkspaceEvents();
+    bindSettingsEvents();
+    bindAuthEvents();
+    bindGlobalEvents();
+  }
+
+  function bindWorkspaceEvents() {
     ui.newRoomButton.addEventListener("click", handleCreateRoom);
     ui.chatForm.addEventListener("submit", handleSendMessage);
     ui.modeSelect.addEventListener("change", updateModeChip);
@@ -184,6 +196,9 @@
       closeDrawer("concept"),
     );
     ui.conceptBackdrop.addEventListener("click", () => closeDrawer("concept"));
+  }
+
+  function bindSettingsEvents() {
     if (ui.settingsButton) {
       ui.settingsButton.addEventListener("click", openSettingsOverlay);
     }
@@ -208,6 +223,9 @@
         handleDeleteAccount,
       );
     }
+  }
+
+  function bindAuthEvents() {
     if (ui.authForm) {
       ui.authForm.addEventListener("submit", handleAuthSubmit);
     }
@@ -229,6 +247,9 @@
     if (ui.logoutButton) {
       ui.logoutButton.addEventListener("click", handleLogout);
     }
+  }
+
+  function bindGlobalEvents() {
     document.addEventListener("click", handleDocumentClick);
     window.addEventListener("beforeinstallprompt", handleBeforeInstallPrompt);
     window.addEventListener("resize", handleWindowResize);
@@ -1142,6 +1163,20 @@
     renderAttachmentPreview();
   }
 
+  function syncOpenRoomMenuState() {
+    if (
+      state.openRoomMenuId &&
+      !state.rooms.some((room) => room.id === state.openRoomMenuId)
+    ) {
+      state.openRoomMenuId = null;
+    }
+  }
+
+  function setRoomsState(rooms) {
+    state.rooms = Array.isArray(rooms) ? rooms : [];
+    syncOpenRoomMenuState();
+  }
+
   function buildOutgoingPreviewText(message, hasImage) {
     if (message && hasImage) {
       return `${message}\n[문제 이미지 첨부]`;
@@ -1276,14 +1311,7 @@
 
     try {
       const result = await requestJson("/api/chat/rooms");
-      state.rooms = Array.isArray(result.data) ? result.data : [];
-
-      if (
-        state.openRoomMenuId &&
-        !state.rooms.some((room) => room.id === state.openRoomMenuId)
-      ) {
-        state.openRoomMenuId = null;
-      }
+      setRoomsState(result.data);
 
       renderRoomList();
 
@@ -1458,14 +1486,7 @@
   async function refreshRoomsPreservingSelection() {
     try {
       const result = await requestJson("/api/chat/rooms");
-      state.rooms = Array.isArray(result.data) ? result.data : [];
-
-      if (
-        state.openRoomMenuId &&
-        !state.rooms.some((room) => room.id === state.openRoomMenuId)
-      ) {
-        state.openRoomMenuId = null;
-      }
+      setRoomsState(result.data);
 
       renderRoomList();
       updateSelectedRoomChip();
@@ -1592,6 +1613,82 @@
     return `${header}\n\n${lines.join("\n\n")}`;
   }
 
+  function ensureClipboardSupport() {
+    if (!navigator.clipboard || !navigator.clipboard.writeText) {
+      throw new Error("클립보드 복사를 지원하지 않는 환경입니다.");
+    }
+  }
+
+  async function shareRoomConversation(roomId, room) {
+    const messages = await getShareableMessages(roomId);
+
+    ensureClipboardSupport();
+    await navigator.clipboard.writeText(buildShareText(room, messages));
+    showToast("대화 내역이 복사되었습니다", "success");
+    await loadRooms({ createOnEmpty: false });
+  }
+
+  async function renameRoom(roomId, room) {
+    const nextTitle = window.prompt(
+      "새 세션 이름을 입력해 주세요.",
+      room.title || "새 오답 노트",
+    );
+
+    if (nextTitle === null) {
+      return;
+    }
+
+    const normalizedTitle = nextTitle.trim();
+
+    if (!normalizedTitle) {
+      showToast("세션 이름은 비워 둘 수 없습니다.");
+      return;
+    }
+
+    await requestJson(`/api/chat/rooms/${roomId}`, {
+      method: "PATCH",
+      body: JSON.stringify({
+        title: normalizedTitle,
+      }),
+    });
+    showToast("세션 이름을 변경했습니다.", "success");
+    await loadRooms({ createOnEmpty: false });
+  }
+
+  async function toggleRoomPin(roomId) {
+    const result = await requestJson(`/api/chat/rooms/${roomId}/pin`, {
+      method: "PATCH",
+    });
+    const isPinned = Number(result.data?.is_pinned) === 1;
+
+    showToast(
+      isPinned ? "세션을 고정했습니다." : "세션 고정을 해제했습니다.",
+      "success",
+    );
+    await loadRooms({ createOnEmpty: false });
+  }
+
+  async function deleteRoom(roomId) {
+    const shouldDelete = window.confirm("정말로 이 세션을 삭제하시겠습니까?");
+
+    if (!shouldDelete) {
+      return;
+    }
+
+    await requestJson(`/api/chat/rooms/${roomId}`, {
+      method: "DELETE",
+    });
+
+    removeRoomLocalState(roomId);
+
+    if (state.currentRoomId === roomId) {
+      state.currentRoomId = null;
+    }
+
+    showToast("세션을 삭제했습니다.", "success");
+    await loadRooms({ createOnEmpty: false });
+  }
+
   async function handleRoomMenuAction(action, roomId) {
     const room = findRoomById(roomId);
 
@@ -1603,83 +1700,19 @@
     closeRoomMenu();
 
     try {
-      if (action === "share") {
-        const messages = await getShareableMessages(roomId);
+      const actionHandlers = {
+        share: () => shareRoomConversation(roomId, room),
+        rename: () => renameRoom(roomId, room),
+        pin: () => toggleRoomPin(roomId),
+        delete: () => deleteRoom(roomId),
+      };
+      const actionHandler = actionHandlers[action];
 
-        if (!navigator.clipboard || !navigator.clipboard.writeText) {
-          throw new Error("클립보드 복사를 지원하지 않는 환경입니다.");
-        }
-
-        await navigator.clipboard.writeText(buildShareText(room, messages));
-        showToast("대화 내역이 복사되었습니다", "success");
-        await loadRooms({ createOnEmpty: false });
+      if (!actionHandler) {
         return;
       }
 
-      if (action === "rename") {
-        const nextTitle = window.prompt(
-          "새 세션 이름을 입력해 주세요.",
-          room.title || "새 오답 노트",
-        );
-
-        if (nextTitle === null) {
-          return;
-        }
-
-        const normalizedTitle = nextTitle.trim();
-
-        if (!normalizedTitle) {
-          showToast("세션 이름은 비워 둘 수 없습니다.");
-          return;
-        }
-
-        await requestJson(`/api/chat/rooms/${roomId}`, {
-          method: "PATCH",
-          body: JSON.stringify({
-            title: normalizedTitle,
-          }),
-        });
-        showToast("세션 이름을 변경했습니다.", "success");
-        await loadRooms({ createOnEmpty: false });
-        return;
-      }
-
-      if (action === "pin") {
-        const result = await requestJson(`/api/chat/rooms/${roomId}/pin`, {
-          method: "PATCH",
-        });
-        const isPinned = Number(result.data?.is_pinned) === 1;
-
-        showToast(
-          isPinned ? "세션을 고정했습니다." : "세션 고정을 해제했습니다.",
-          "success",
-        );
-        await loadRooms({ createOnEmpty: false });
-        return;
-      }
-
-      if (action === "delete") {
-        const shouldDelete = window.confirm(
-          "정말로 이 세션을 삭제하시겠습니까?",
-        );
-
-        if (!shouldDelete) {
-          return;
-        }
-
-        await requestJson(`/api/chat/rooms/${roomId}`, {
-          method: "DELETE",
-        });
-
-        removeRoomLocalState(roomId);
-
-        if (state.currentRoomId === roomId) {
-          state.currentRoomId = null;
-        }
-
-        showToast("세션을 삭제했습니다.", "success");
-        await loadRooms({ createOnEmpty: false });
-      }
+      await actionHandler();
     } catch (error) {
       console.error(error);
       showToast(error.message || "세션 관리 작업 중 오류가 발생했습니다.");
