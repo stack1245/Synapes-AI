@@ -180,15 +180,11 @@ function getEmailTransporter() {
 
     emailTransporter = nodemailer.createTransport({
       host: "smtp.gmail.com",
-      port: 587,
-      secure: false,
+      port: 465,
+      secure: true,
       auth: {
         user: emailUser,
         pass: emailPass,
-      },
-      localAddress: "0.0.0.0",
-      tls: {
-        rejectUnauthorized: false,
       },
     });
   }
@@ -765,22 +761,32 @@ app.post("/api/auth/send-verification", async (req, res) => {
       });
     }
 
-    // 6자리 고정 인증번호 생성 (시연 및 채점용 프리패스)
-    const verificationCode = "123456";
-    const expiresAt = new Date(Date.now() + 3 * 60 * 1000).toISOString();
+    const verificationCode = generateVerificationCode();
+    const expiresAt = buildVerificationExpiresAt();
 
     await saveEmailVerification(email, verificationCode, expiresAt);
 
+    try {
+      await sendVerificationEmail(email, verificationCode);
+    } catch (mailError) {
+      await db.run(
+        `DELETE FROM email_verifications
+         WHERE email = ? AND code = ?`,
+        [email, verificationCode],
+      );
+      throw mailError;
+    }
+
     return res.json({
       success: true,
-      message: "인증번호가 발송되었습니다. (시연용 테스트 번호: 123456)",
+      message: "인증번호를 이메일로 전송했습니다.",
     });
   } catch (error) {
-    console.error("Verification error:", error);
+    console.error("Failed to send verification code:", error);
 
-    return res.status(500).json({
+    return res.status(error.statusCode || 500).json({
       success: false,
-      message: "서버 오류가 발생했습니다.",
+      message: "인증번호 전송 중 오류가 발생했습니다.",
     });
   }
 });
