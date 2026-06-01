@@ -1883,6 +1883,12 @@
   }
 
   function getThemePalette(theme = getCurrentTheme()) {
+    const rootStyles = getComputedStyle(document.documentElement);
+    const readCssVariable = (name, fallback) => {
+      const value = rootStyles.getPropertyValue(name).trim();
+      return value || fallback;
+    };
+
     if (theme === "dark") {
       return {
         coreBackground: "#2b3038",
@@ -1890,10 +1896,30 @@
         nodeBorder: "rgba(203, 213, 225, 0.22)",
         nodeText: "#f8fafc",
         edge: "rgba(148, 163, 184, 0.42)",
-        selectedNode: "#f4a261",
-        selectedBorder: "#ffd3bd",
-        selectedText: "#fffaf6",
-        activeEdge: "rgba(244, 162, 97, 0.84)",
+        highlightedNode: readCssVariable(
+          "--cy-highlight-node-bg",
+          "rgba(244, 162, 97, 0.22)",
+        ),
+        highlightedBorder: readCssVariable(
+          "--cy-highlight-node-border",
+          "#f6b183",
+        ),
+        highlightedText: readCssVariable("--cy-highlight-node-text", "#fff2e8"),
+        highlightedGlow: readCssVariable(
+          "--cy-highlight-node-glow",
+          "rgba(244, 162, 97, 0.42)",
+        ),
+        selectedNode: readCssVariable("--cy-selected-node-bg", "#f4a261"),
+        selectedBorder: readCssVariable("--cy-selected-node-border", "#ffd3bd"),
+        selectedText: readCssVariable("--cy-selected-node-text", "#fffaf6"),
+        selectedGlow: readCssVariable(
+          "--cy-selected-node-glow",
+          "rgba(255, 172, 113, 0.62)",
+        ),
+        activeEdge: readCssVariable(
+          "--cy-highlight-edge",
+          "rgba(244, 162, 97, 0.9)",
+        ),
       };
     }
 
@@ -1903,10 +1929,27 @@
       nodeBorder: "rgba(100, 116, 139, 0.26)",
       nodeText: "#334155",
       edge: "rgba(100, 116, 139, 0.38)",
-      selectedNode: "#f59b64",
-      selectedBorder: "#ea7a3a",
-      selectedText: "#fffaf5",
-      activeEdge: "rgba(245, 155, 100, 0.82)",
+      highlightedNode: readCssVariable("--cy-highlight-node-bg", "#fff0e4"),
+      highlightedBorder: readCssVariable(
+        "--cy-highlight-node-border",
+        "#f5a26f",
+      ),
+      highlightedText: readCssVariable("--cy-highlight-node-text", "#7d411a"),
+      highlightedGlow: readCssVariable(
+        "--cy-highlight-node-glow",
+        "rgba(245, 155, 100, 0.32)",
+      ),
+      selectedNode: readCssVariable("--cy-selected-node-bg", "#f59b64"),
+      selectedBorder: readCssVariable("--cy-selected-node-border", "#ea7a3a"),
+      selectedText: readCssVariable("--cy-selected-node-text", "#fffaf5"),
+      selectedGlow: readCssVariable(
+        "--cy-selected-node-glow",
+        "rgba(245, 155, 100, 0.48)",
+      ),
+      activeEdge: readCssVariable(
+        "--cy-highlight-edge",
+        "rgba(245, 155, 100, 0.92)",
+      ),
     };
   }
 
@@ -1952,19 +1995,40 @@
         },
       },
       {
-        selector: "node.selected",
+        selector: "node.highlighted",
         style: {
-          "background-color": palette.selectedNode,
-          "border-color": palette.selectedBorder,
-          color: palette.selectedText,
+          "background-color": palette.highlightedNode,
+          "border-width": 2.5,
+          "border-color": palette.highlightedBorder,
+          color: palette.highlightedText,
+          "shadow-color": palette.highlightedGlow,
+          "shadow-blur": 22,
+          "shadow-opacity": 0.72,
+          "shadow-offset-x": 0,
+          "shadow-offset-y": 0,
         },
       },
       {
-        selector: "edge.active-path",
+        selector: "node.selected",
         style: {
-          width: 3,
+          "background-color": palette.selectedNode,
+          "border-width": 3.5,
+          "border-color": palette.selectedBorder,
+          color: palette.selectedText,
+          "shadow-color": palette.selectedGlow,
+          "shadow-blur": 30,
+          "shadow-opacity": 0.88,
+          "shadow-offset-x": 0,
+          "shadow-offset-y": 0,
+        },
+      },
+      {
+        selector: "edge.highlighted, edge.active-path",
+        style: {
+          width: 4,
           "line-color": palette.activeEdge,
           "target-arrow-color": palette.activeEdge,
+          opacity: 1,
         },
       },
     ];
@@ -2060,8 +2124,7 @@
       return;
     }
 
-    state.cy.nodes().removeClass("selected");
-    state.cy.edges().removeClass("active-path");
+    clearCyHighlights();
 
     if (state.currentConceptId === null) {
       return;
@@ -2072,15 +2135,43 @@
       return;
     }
 
+    const highlightPath = getHighlightedConceptPath(targetNode);
+
+    highlightPath.addClass("highlighted");
     targetNode.addClass("selected");
-    targetNode.connectedEdges().addClass("active-path");
     ui.conceptPanelTitle.textContent = targetNode.data("label");
     ui.conceptPanelDescription.textContent =
-      "이 개념을 기준으로 AI 답변의 추천 개념 흐름을 유도합니다.";
+      "이 개념부터 최상위 부모 개념까지의 학습 경로를 강조해 보여줍니다.";
 
     if (options.focus !== false) {
       focusConceptNode(targetNode, options.animate === true);
     }
+  }
+
+  function clearCyHighlights() {
+    if (!state.cy) {
+      return;
+    }
+
+    state.cy.nodes().removeClass("selected highlighted active-path");
+    state.cy.edges().removeClass("selected highlighted active-path");
+  }
+
+  function getHighlightedConceptPath(targetNode) {
+    if (!state.cy || !targetNode || targetNode.empty()) {
+      return state.cy ? state.cy.collection() : null;
+    }
+
+    const compoundAncestors =
+      typeof targetNode.ancestors === "function"
+        ? targetNode.ancestors()
+        : state.cy.collection();
+    const traversalAncestors =
+      typeof targetNode.predecessors === "function"
+        ? targetNode.predecessors()
+        : state.cy.collection();
+
+    return targetNode.union(compoundAncestors).union(traversalAncestors);
   }
 
   function focusConceptNode(targetNode, shouldAnimate) {
