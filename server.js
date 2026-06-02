@@ -386,10 +386,11 @@ function buildSystemPrompt(mode) {
 
   return [
     modePrompt,
+    "★중요 안전 장치★: 만약 사용자의 질문이 수학 공부와 전혀 관련 없는 일상 잡담(인사 직후 이어지는 실질 질문 제외), 장난, 혹은 수학이 아닌 다른 교과 과목(예: 영어, 과학, 국어, 사회 등)에 대한 내용이라면, 풀이나 힌트를 주지 마라. 대신 reply 필드에 다음과 같이 정중히 거절해라: '죄송합니다. 저는 수학 학습 및 오답 노트를 돕는 시냅스 AI입니다. 현재 수학 이외의 다른 과목이나 주제는 커리큘럼에 등록되어 있지 않습니다. 수학 관련 질문을 입력해 주세요!' 이 경우 conceptId는 null로 반환해라.",
     "반드시 JSON 객체만 응답해라.",
-    '응답 형식은 {"reply":"학생에게 보여줄 답변","conceptId":추천할 개념 노드 ID} 이다.',
+    '응답 형식은 {"reply":"학생에게 보여줄 답변","conceptId":추천할 개념 노드 ID 또는 null} 이다.',
     "reply는 한국어 문자열로 작성해라.",
-    "conceptId는 반드시 제공된 개념 노드 목록에 있는 정수 ID 하나만 반환해라.",
+    "conceptId는 정상적인 수학 질문일 경우 반드시 제공된 개념 노드 목록에 있는 정수 ID 하나만 반환해라.",
     "★중요★ reply 내용에 줄바꿈이 필요할 경우 실제 줄바꿈(엔터)은 절대 사용하지 말고, 반드시 '\\n' 기호를 사용해서 이스케이프 처리해라.",
     "마크다운(```json 등) 포맷팅이나 부가 설명은 절대 추가하지 말고 오직 순수한 JSON 객체만 반환해라.",
     "JSON 이외의 설명, 코드블록, 머리말은 절대 추가하지 마라.",
@@ -596,6 +597,10 @@ function getFallbackConceptId(currentConceptId, concepts) {
 }
 
 function resolveConceptId(candidateConceptId, currentConceptId, concepts) {
+  if (candidateConceptId === null) {
+    return null;
+  }
+
   const parsedConceptId = parseOptionalInteger(candidateConceptId);
   const validConceptIds = new Set(concepts.map((concept) => concept.id));
 
