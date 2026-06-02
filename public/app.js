@@ -1846,6 +1846,8 @@
 
   function buildMessageMarkup(message) {
     const senderRole = message.sender_role || message.role || "assistant";
+    const isMarkdownMessage =
+      senderRole === "assistant" || senderRole === "system";
     const roleLabel =
       senderRole === "user"
         ? "나"
@@ -1856,6 +1858,12 @@
     const dateLabel = message.created_at
       ? formatTimeLabel(message.created_at)
       : "방금";
+    const messageBodyClass = isMarkdownMessage
+      ? "message-body markdown-body text-[15px]"
+      : "message-body text-[15px]";
+    const messageBodyMarkup = isMarkdownMessage
+      ? marked.parse(message.content || "")
+      : escapeHtml(message.content || "");
     const imageMarkup = message.image_base64
       ? `<div class="mt-3"><img src="${message.image_base64}" alt="첨부 이미지" class="message-attached-image" /></div>`
       : "";
@@ -1868,7 +1876,7 @@
             <span>${escapeHtml(dateLabel)}</span>
             ${conceptName ? `<span class="message-concept-chip">${escapeHtml(conceptName)}</span>` : ""}
           </div>
-          <div class="message-body text-[15px]">${escapeHtml(message.content || "")}</div>
+          <div class="${messageBodyClass}">${messageBodyMarkup}</div>
           ${imageMarkup}
         </div>
       </article>

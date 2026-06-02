@@ -1291,3 +1291,64 @@ input,
     line-height: 1.6 !important;
   }
 }
+
+.markdown-body {
+  white-space: normal;
+  line-height: 1.8;
+  overflow-wrap: anywhere;
+}
+
+.markdown-body > :first-child {
+  margin-top: 0;
+}
+
+.markdown-body > :last-child {
+  margin-bottom: 0;
+}
+
+.markdown-body p {
+  margin: 0.45rem 0;
+}
+
+.markdown-body ul,
+.markdown-body ol {
+  padding-left: 1.5rem;
+  margin: 0.5rem 0;
+  list-style-type: disc;
+}
+
+.markdown-body ol {
+  list-style-type: decimal;
+}
+
+.markdown-body li {
+  margin: 0.25rem 0;
+}
+
+.markdown-body strong {
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.markdown-body code {
+  background: var(--panel-subtle);
+  padding: 0.2rem 0.4rem;
+  border-radius: 0.4rem;
+  font-family: monospace;
+  font-size: 0.9em;
+}
+
+.markdown-body pre {
+  background: var(--panel-soft);
+  border: 1px solid var(--panel-border);
+  padding: 1rem;
+  border-radius: 0.8rem;
+  overflow-x: auto;
+  margin: 0.8rem 0;
+}
+
+.markdown-body pre code {
+  background: transparent;
+  padding: 0;
+  border-radius: 0;
+}
