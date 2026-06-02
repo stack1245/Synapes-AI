@@ -17,6 +17,7 @@ const { open } = require("sqlite");
 
 const app = express();
 const PORT = Number(process.env.PORT) || 3000;
+// Render 클라우드 환경인지 검사하여, 맞다면 마운트된 영구 디스크(Disks) 폴더 경로로 강제 고정합니다.
 const DB_PATH = process.env.RENDER
   ? "/opt/render/project/src/data/database.db"
   : path.join(__dirname, "database.db");
@@ -1527,8 +1528,9 @@ async function startServer() {
   try {
     getJwtSecret();
 
-    const dbDirectoryPath = path.dirname(DB_PATH);
-    await fs.mkdir(dbDirectoryPath, { recursive: true });
+    // 데이터베이스 파일이 저장될 상위 디렉터리가 없으면 자동 생성 가드 작동 (SQLITE_CANTOPEN 방지)
+    const dbDir = path.dirname(DB_PATH);
+    await fs.mkdir(dbDir, { recursive: true });
 
     await initializeDatabase();
 
