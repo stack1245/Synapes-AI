@@ -1449,6 +1449,9 @@ app.post("/api/chat/message", authenticateToken, async (req, res) => {
         buildSystemPrompt(mode),
         buildConceptGuide(concepts, parsedCurrentConceptId),
       ].join("\n\n"),
+      generationConfig: {
+        responseMimeType: "application/json",
+      },
     });
     const geminiMessages = buildGeminiMessages(
       conversationMessages,
